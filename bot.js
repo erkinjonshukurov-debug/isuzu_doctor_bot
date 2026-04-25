@@ -1,4 +1,10 @@
-const TelegramBot = require('node-telegram-bot-api');
+// ========================================
+// ISUZU DOCTOR BOT - Avtomobil diagnostikasi uchun Telegram bot
+// Muallif: Erkinjon Shukurov
+// Telegram: @erkinjon_01_01
+// GitHub: github.com/erkinjonshukurov-debug
+// © 2024-2026 Erkinjon Shukurov. Barcha huquqlar himoyalangan.
+// ========================================const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs');
 
