@@ -1,220 +1,104 @@
 // ========================================
-// ISUZU DOCTOR BOT - Avtomobil diagnostikasi uchun Telegram bot
-// ========================================
+// ISUZU DOCTOR BOT
 // Muallif: Erkinjon Shukurov
 // Telegram: @erkinjon_01_01
-// GitHub: github.com/erkinjonshukurov-debug
-// © 2024-2026 Erkinjon Shukurov. Barcha huquqlar himoyalangan.
+//  2024-2026 Erkinjon Shukurov
 // ========================================
 
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs');
 
-// -------------------- AVTORLIK MA'LUMOTLARI --------------------
-const AUTHOR_NAME = "Erkinjon Shukurov";
-const AUTHOR_TELEGRAM = "@erkinjon_01_01";
-const AUTHOR_GITHUB = "github.com/erkinjonshukurov-debug";
-const COPYRIGHT_TEXT = "© 2024-2026 Erkinjon Shukurov. Barcha huquqlar himoyalangan.";
-
-function getAuthorInfo() {
-    return `\n👨‍💻 *Muallif:* ${AUTHOR_NAME}\n📱 *Telegram:* ${AUTHOR_TELEGRAM}\n📜 ${COPYRIGHT_TEXT}`;
-}
-
-// -------------------- VERSIYA MA'LUMOTLARI --------------------
-const BOT_VERSION = "2.1.0";
-const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
-const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
-const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy";
-
-// -------------------- VAQT ZONASI --------------------
-function getTashkentTime(date) {
-    const dateObj = typeof date === 'string' ? new Date(date) : date;
-    const tashkentOffset = 5 * 60 * 60 * 1000;
-    return new Date(dateObj.getTime() + tashkentOffset);
-}
-
-function formatTashkentDate(date) {
-    const tashkentDate = getTashkentTime(date);
-    return tashkentDate.toLocaleDateString('uz-UZ', {
-        year: 'numeric', month: 'long', day: 'numeric'
-    });
-}
-
-function formatTashkentTime(date) {
-    const tashkentDate = getTashkentTime(date);
-    return tashkentDate.toLocaleTimeString('uz-UZ', {
-        hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
-}
-
-// -------------------- TO'LOV MA'LUMOTLARI --------------------
-const CARD_NUMBER = "9860040115220143";
-const CARD_OWNER = "Erkinjon Shukurov";
-const BANK_NAME = "Xalq Bank";
-
-function getCardInfoMessage() {
-    return `
-🏦 *KARTA MA'LUMOTLARI*
-
-💳 *Karta raqami:* \`${CARD_NUMBER}\`
-👤 *Karta egasi:* ${CARD_OWNER}
-🏛 *Bank:* ${BANK_NAME}
-
-📌 *To'lov qilish uchun:*
-1. Karta raqamini nusxalang
-2. O'z bankingiz ilovasida to'lov qiling
-3. To'lov chekini saqlang
-
-✅ To'lov amalga oshirilgandan so'ng, administrator bilan bog'lanishingiz mumkin.
-    `;
-}
-
-// -------------------- XAVFSIZLIK VA ADMIN --------------------
 const BOT_TOKEN = process.env.BOT_TOKEN || '8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A';
-const ADMIN_PHONE = "+998979247888";
 const ADMIN_IDS = [1437230485];
-const SUPER_ADMIN_ID = 1437230485;
-const DIAGNOSTIC_PRICE = 250000;
-const MAX_CARS_PER_USER = 20;
+const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
+
+// -------------------- AVTORLIK --------------------
+const AUTHOR = "Erkinjon Shukurov";
+const AUTHOR_TG = "@erkinjon_01_01";
 
 // -------------------- VOLUME --------------------
-const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
-const BACKUP_DIR = path.join(VOLUME_PATH, 'backups');
+if (!fs.existsSync(VOLUME_PATH)) fs.mkdirSync(VOLUME_PATH, { recursive: true });
 const USERS_FILE = path.join(VOLUME_PATH, 'users.json');
-const DIAGNOSTICS_FILE = path.join(VOLUME_PATH, 'diagnostics.json');
-const ERRORS_FILE = path.join(VOLUME_PATH, 'errors.json');
-
-function ensureVolumeDir() {
-    if (!fs.existsSync(VOLUME_PATH)) fs.mkdirSync(VOLUME_PATH, { recursive: true });
-    if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
-}
-ensureVolumeDir();
-
-// -------------------- DATABASE --------------------
 let users = [];
-let diagnostics = [];
-let errors = [];
 
-function loadData() {
+function loadUsers() {
     try {
-        if (fs.existsSync(USERS_FILE)) users = JSON.parse(fs.readFileSync(USERS_FILE, "utf8"));
+        if (fs.existsSync(USERS_FILE)) users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
         else users = [];
-        if (fs.existsSync(DIAGNOSTICS_FILE)) diagnostics = JSON.parse(fs.readFileSync(DIAGNOSTICS_FILE, "utf8"));
-        else diagnostics = [];
-        if (fs.existsSync(ERRORS_FILE)) errors = JSON.parse(fs.readFileSync(ERRORS_FILE, "utf8"));
-        else errors = [];
-        console.log("✅ Ma'lumotlar yuklandi: " + users.length + " foydalanuvchi");
-    } catch (err) { console.error("Yuklash xatolik:", err); }
+        console.log(` ${users.length} foydalanuvchi yuklandi`);
+    } catch(e) { users = []; }
 }
 function saveUsers() { fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2)); }
-function saveDiagnostics() { fs.writeFileSync(DIAGNOSTICS_FILE, JSON.stringify(diagnostics, null, 2)); }
 
-function getUserByUserId(userId) { return users.find(u => u.userId === userId); }
+function getUser(userId) { return users.find(u => u.id === userId); }
 function isAdmin(userId) { return ADMIN_IDS.includes(userId); }
 
 // -------------------- ASOSIY MENYU --------------------
-function getCompactInlineKeyboard() {
-    return { reply_markup: { inline_keyboard: [
-        [{ text: "📊 Profil", callback_data: "user_profile" }, { text: "🚗 Avtomobillar", callback_data: "user_my_cars" }],
-        [{ text: "🎁 Bonuslar", callback_data: "user_my_bonus" }, { text: "➕ Avto qo'shish", callback_data: "user_add_car" }],
-        [{ text: "📋 Tarix", callback_data: "user_history" }, { text: "💳 To'lov", callback_data: "user_payment" }],
-        [{ text: "📸 Instagram", callback_data: "user_instagram" }, { text: "👥 Guruh", callback_data: "user_telegram_group" }],
-        [{ text: "ℹ️ Ma'lumot", callback_data: "user_info" }, { text: "📌 Versiya", callback_data: "user_version_info" }]
-    ], resize_keyboard: true } };
-}
-
-function getPhoneKeyboard() {
-    return { reply_markup: { keyboard: [[{ text: "📱 Telefon raqamini yuborish", request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } };
-}
-function removeKeyboard() { return { reply_markup: { remove_keyboard: true } }; }
-
-async function sendMainMenu(chatId, isAdminUser = false) {
-    try {
-        if (isAdminUser) {
-            await bot.sendMessage(chatId, "👑 *Admin paneli*\n" + getAuthorInfo(), { parse_mode: "Markdown" });
-        } else {
-            await bot.sendMessage(chatId, "🏠 *Asosiy menyu*\n\n📌 Versiyangiz: `" + BOT_VERSION + "`\n" + getAuthorInfo(), { parse_mode: "Markdown", ...getCompactInlineKeyboard() });
-        }
-    } catch (error) { console.error("Menu xatolik:", error); }
-}
+const mainMenu = {
+    reply_markup: {
+        inline_keyboard: [
+            [{ text: " Profil", callback_data: "profile" }, { text: " Avtomobillar", callback_data: "cars" }],
+            [{ text: " Bonus", callback_data: "bonus" }, { text: " Avto qo'shish", callback_data: "add_car" }],
+            [{ text: " Tarix", callback_data: "history" }, { text: " To'lov", callback_data: "payment" }],
+            [{ text: "? Ma'lumot", callback_data: "info" }]
+        ]
+    }
+};
 
 // -------------------- BOT --------------------
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-bot.deleteWebHook().catch(e => console.log("Webhook xatolik:", e.message));
+bot.deleteWebHook().catch(() => {});
 
-const REMINDER_MESSAGE = `🚗 *Hurmatli mijoz!* Avtomobilingizni professionallarga ishonib topshiring! 🛠️`;
-async function sendReminder(chatId) { try { await bot.sendMessage(chatId, REMINDER_MESSAGE, { parse_mode: "Markdown" }); } catch (error) {} }
-
-// -------------------- /start --------------------
+// -------------------- START --------------------
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
-    const firstName = msg.from.first_name || "";
+    const name = msg.from.first_name || "";
+
+    loadUsers();
+    let user = getUser(userId);
     
-    const existingUser = getUserByUserId(userId);
-    
-    if (existingUser?.isBlocked) {
-        await bot.sendMessage(chatId, "🚫 Bloklangansiz! 📞 " + ADMIN_PHONE, { parse_mode: "Markdown", ...removeKeyboard() });
-        return;
+    if (!user) {
+        user = { id: userId, name: name, cars: [], created: new Date().toISOString() };
+        users.push(user);
+        saveUsers();
+        await bot.sendMessage(chatId, ` *ISUZU DOCTOR*\n\n Xush kelibsiz, ${name}!\n Versiya: 2.1.0\n\n ${AUTHOR}\n ${AUTHOR_TG}`, { parse_mode: "Markdown", ...mainMenu });
+    } else {
+        await bot.sendMessage(chatId, ` Xush kelibsiz, ${user.name || name}!\n\n ${AUTHOR}\n ${AUTHOR_TG}`, { parse_mode: "Markdown", ...mainMenu });
     }
-    
-    try {
-        await sendReminder(chatId);
-        if (existingUser) {
-            await bot.sendMessage(chatId, "👋 Xush kelibsiz, " + (existingUser.fullName || firstName) + "!\n📌 Versiya: `" + BOT_VERSION + "`", { parse_mode: "Markdown" });
-            await sendMainMenu(chatId, isAdmin(userId));
-        } else {
-            await bot.sendMessage(chatId, "🚗 *ISUZU DOCTOR* ga xush kelibsiz!\n\n📱 Telefon raqamingizni yuboring:", { parse_mode: "Markdown", ...getPhoneKeyboard() });
-        }
-    } catch (error) { console.error("/start xatolik:", error); }
 });
 
-// -------------------- /info --------------------
+// -------------------- INFO --------------------
 bot.onText(/\/info/, async (msg) => {
-    const chatId = msg.chat.id;
-    await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 BEPUL\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Versiya: `" + BOT_VERSION + "`\n🔗 " + NEW_BOT_LINK + "\n📸 " + INSTAGRAM_LINK + "\n👥 " + TELEGRAM_GROUP_LINK + getAuthorInfo(), { parse_mode: "Markdown" });
+    await bot.sendMessage(msg.chat.id, 
+        `? *ISUZU DOCTOR BOT*\n\n Avtomobil diagnostikasi\n 5 diagnostika = 1 BEPUL\n Versiya: 2.1.0\n\n *Muallif:* ${AUTHOR}\n *Telegram:* ${AUTHOR_TG}\n  2024-2026 ${AUTHOR}`, 
+        { parse_mode: "Markdown" }
+    );
 });
 
-// -------------------- BOSHQARUVCHI --------------------
+// -------------------- CALLBACK --------------------
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
-    const userId = query.from.id;
-    
     await bot.answerCallbackQuery(query.id);
-    
-    if (data === "user_info") {
-        await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 BEPUL\n📌 Versiya: `" + BOT_VERSION + "`" + getAuthorInfo(), { parse_mode: "Markdown" });
+
+    if (data === "info") {
+        await bot.sendMessage(chatId, `? *BOT MA'LUMOTI*\n\n ISUZU diagnostika boti\n 5 ta to'lovli diagnostika = 1 BEPUL\n Versiya: 2.1.0\n\n *Muallif:* ${AUTHOR}\n *Telegram:* ${AUTHOR_TG}`, { parse_mode: "Markdown" });
     }
-    else if (data === "user_payment") {
-        await bot.sendMessage(chatId, getCardInfoMessage(), { parse_mode: "Markdown" });
+    else if (data === "payment") {
+        await bot.sendMessage(chatId, ` *TO'LOV MA'LUMOTLARI*\n\nKarta: 9860 0401 1522 0143\nEgasi: Erkinjon Shukurov\nBank: Xalq Bank`, { parse_mode: "Markdown" });
     }
-    else if (data === "user_instagram") {
-        await bot.sendMessage(chatId, "📸 *INSTAGRAM*\n\n🔗 " + INSTAGRAM_LINK, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "📸 Ochish", url: INSTAGRAM_LINK }]] } });
-    }
-    else if (data === "user_telegram_group") {
-        await bot.sendMessage(chatId, "👥 *TELEGRAM GURUH*\n\n🔗 " + TELEGRAM_GROUP_LINK, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "👥 Ochish", url: TELEGRAM_GROUP_LINK }]] } });
-    }
-    else if (data === "user_version_info") {
-        await bot.sendMessage(chatId, "📌 *VERSIYA*\n\n🔹 Bot versiyasi: `" + BOT_VERSION + "`\n🔹 Yangi bot: " + NEW_BOT_LINK + getAuthorInfo(), { parse_mode: "Markdown" });
-    }
-    else if (data === "back_to_main") {
-        await sendMainMenu(chatId, isAdmin(userId));
+    else if (data === "profile" || data === "cars" || data === "bonus" || data === "add_car" || data === "history") {
+        await bot.sendMessage(chatId, ` *Bu funksiya ishlab chiqilmoqda*\n\n ${AUTHOR}\n ${AUTHOR_TG}`, { parse_mode: "Markdown" });
     }
 });
 
 // -------------------- ISHGA TUSHIRISH --------------------
-console.log("=".repeat(60));
-console.log("🚗 ISUZU DOCTOR BOT");
-console.log(`👨‍💻 Muallif: ${AUTHOR_NAME}`);
-console.log(`📱 Telegram: ${AUTHOR_TELEGRAM}`);
-console.log(`📜 ${COPYRIGHT_TEXT}`);
-console.log("=".repeat(60));
-
-loadData();
-console.log(`✅ Bot ishlashga tayyor! Versiya: ${BOT_VERSION}`);
-console.log(`👥 Foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
-
-bot.on("polling_error", (error) => console.error("Polling xatolik:", error));
-process.on("uncaughtException", (error) => console.error("Uncaught exception:", error));
+loadUsers();
+console.log("=".repeat(50));
+console.log(" ISUZU DOCTOR BOT");
+console.log(` ${AUTHOR}`);
+console.log(` ${AUTHOR_TG}`);
+console.log("=".repeat(50));
+console.log(" Bot ishlayapti!");
