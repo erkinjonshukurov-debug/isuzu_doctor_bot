@@ -1,8 +1,100 @@
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const os = require('os');
 
-// -------------------- VERSIYA MA'LUMOTLARI --------------------
+// ======================== AVTORLIK HUQUQI VA LITSENZIYA ========================
+const LICENSE_KEY = "ISUZU_DOCTOR_BOT_V2";
+const BOT_OWNER = "Erkinjon Shukurov";
+const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
+const COPYRIGHT_TEXT = `© ${new Date().getFullYear()} ${BOT_OWNER}. Barcha huquqlar himoyalangan.
+Bu botning har qanday qismidan ruxsatsiz nusxa olish, tarqatish yoki o'zgartirish taqiqlanadi.
+Litsenziya: Faqat shaxsiy va tijorat bo'lmagan maqsadlarda foydalanish mumkin.`;
+
+// =======================! KODNI HIMOYA QILISH FUNKSIYALARI ========================
+let isLicenseValid = true;
+let botStartTime = Date.now();
+let uniqueInstallId = null;
+
+function generateUniqueInstallId() {
+    const systemInfo = [
+        os.hostname(),
+        os.cpus()[0]?.model || "unknown",
+        os.totalmem().toString(),
+        os.networkInterfaces()
+    ].join("|");
+    return crypto.createHash('sha256').update(systemInfo + LICENSE_KEY).digest('hex').substring(0, 16);
+}
+
+function checkLicenseIntegrity() {
+    try {
+        const installFile = path.join(VOLUME_PATH, '.install_id');
+        if (fs.existsSync(installFile)) {
+            const savedId = fs.readFileSync(installFile, 'utf8');
+            if (savedId !== uniqueInstallId) {
+                console.error("⚠️ LITSENZIYA BUZILGAN! Ruxsatsiz nusxa ko'chirish aniqlandi!");
+                return false;
+            }
+        } else {
+            fs.writeFileSync(installFile, uniqueInstallId);
+        }
+        return true;
+    } catch (err) {
+        return true;
+    }
+}
+
+function addWatermarkToCode() {
+    const watermark = `
+// ============================================================
+// AVTOR: ${BOT_OWNER}
+// TELEGRAM: ${BOT_OWNER_TELEGRAM}
+// LITSENZIYA: ${LICENSE_KEY}
+// USHBU BOTNING MUALLIFI ${BOT_OWNER} HISOBLANADI.
+// RUXSATSIZ NUSXA KO'CHIRISH, O'ZGARTIRISH YOKI TARQATISH TA'QIQLANADI!
+// ============================================================
+`;
+    return watermark;
+}
+
+function checkBotIntegrity() {
+    const expectedChecksum = "ISUZU_DOCTOR_CHECKSUM_V2";
+    try {
+        const checkFile = path.join(VOLUME_PATH, '.integrity');
+        if (fs.existsSync(checkFile)) {
+            const saved = fs.readFileSync(checkFile, 'utf8');
+            if (saved !== expectedChecksum) {
+                console.error("⚠️ BOT INTEGRITY BUZILGAN!");
+                return false;
+            }
+        } else {
+            fs.writeFileSync(checkFile, expectedChecksum);
+        }
+        return true;
+    } catch (err) {
+        return true;
+    }
+}
+
+// =======================! HIMOYA XABARLARI ========================
+function getCopyrightMessage() {
+    return `
+📜 *AVTORLIK HUQUQI*
+
+${COPYRIGHT_TEXT}
+
+👨‍💻 *Muallif:* ${BOT_OWNER}
+📞 *Telegram:* ${BOT_OWNER_TELEGRAM}
+🔑 *Litsenziya ID:* \`${uniqueInstallId}\`
+
+⚠️ Ushbu botning kodini ruxsatsiz nusxalash, o'zgartirish yoki boshqa serverda ishga tushirish qat'iyan taqiqlanadi!
+
+📌 *Rasmiy bot:* @Isuzu_doctor_bot
+`;
+}
+
+// ======================== VERSIYA MA'LUMOTLARI ========================
 const BOT_VERSION = "2.1.0";
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
 const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
@@ -253,6 +345,11 @@ function ensureVolumeDir() {
 
 ensureVolumeDir();
 
+// Unique Install ID yaratish
+uniqueInstallId = generateUniqueInstallId();
+checkLicenseIntegrity();
+checkBotIntegrity();
+
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 bot.deleteWebHook().catch(e => console.log("Webhook xatolik:", e.message));
 
@@ -420,6 +517,7 @@ async function generateDiagnosticsReport(diagnosticsList) {
         content += "\nJami: " + diagnosticsList.length + " ta diagnostika\n";
         content += "Hisobot yaratildi: " + formatTashkentDateTime(new Date()) + "\n";
         content += "=".repeat(80) + "\n";
+        content += "\n" + COPYRIGHT_TEXT + "\n";
         
         try {
             fs.writeFileSync(filepath, content, "utf8");
@@ -461,7 +559,7 @@ function addSecurityLog(action, userId, details) {
         id: Date.now(),
         action: action,
         userId: userId,
-        details: details,
+        details: details + " | InstallID: " + uniqueInstallId,
         date: new Date().toISOString()
     };
     adminSettings.securityLog.unshift(log);
@@ -529,7 +627,9 @@ function saveVersion() {
         version: currentVersion,
         updateMode: isUpdateMode,
         lastUpdate: new Date().toISOString(),
-        newBotLink: NEW_BOT_LINK
+        newBotLink: NEW_BOT_LINK,
+        installId: uniqueInstallId,
+        owner: BOT_OWNER
     };
     fs.writeFileSync(VERSION_FILE, JSON.stringify(versionData, null, 2));
 }
@@ -1079,7 +1179,7 @@ function getCompactInlineKeyboard() {
                 [{ text: "📋 Tarix", callback_data: "user_history" }, { text: "📹 Video", callback_data: "user_video_gallery" }],
                 [{ text: "💳 To'lov", callback_data: "user_payment" }, { text: "📸 Instagram", callback_data: "user_instagram" }],
                 [{ text: "👥 Guruh", callback_data: "user_telegram_group" }, { text: "ℹ️ Ma'lumot", callback_data: "user_info" }],
-                [{ text: "📌 Versiya", callback_data: "user_version_info" }]
+                [{ text: "📌 Versiya", callback_data: "user_version_info" }, { text: "🔏 Avtorlik", callback_data: "user_copyright" }]
             ],
             resize_keyboard: true
         }
@@ -1096,7 +1196,8 @@ function getAdminReplyKeyboard() {
         ["📹 Video galereya", "📤 Video yuklash"],
         ["💾 Backup", "🔄 Tiklash"],
         ["🚫 Foyd. boshqarish", "🔐 Xavfsizlik"],
-        ["📌 Versiya", "📢 Xabar yuborish"]
+        ["📌 Versiya", "📢 Xabar yuborish"],
+        ["🔏 Avtorlik huquqi", "❌ Asosiy menyu"]
     ];
     
     keyboard.push(["❌ Asosiy menyu"]);
@@ -1134,7 +1235,7 @@ function removeKeyboard() {
 async function sendMainMenu(chatId, isAdminUser = false, deviceType = "web") {
     try {
         if (isAdminUser) {
-            await bot.sendMessage(chatId, "👑 *Admin paneli*", {
+            await bot.sendMessage(chatId, "👑 *Admin paneli*\n\n" + COPYRIGHT_TEXT.substring(0, 100), {
                 parse_mode: "Markdown",
                 ...getAdminReplyKeyboard()
             });
@@ -1211,7 +1312,7 @@ bot.onText(/\/start/, async (msg) => {
             session.data.lastName = lastName;
             session.data.username = username;
             
-            await bot.sendMessage(chatId, "🚗 *ISUZU DOCTOR* tizimiga xush kelibsiz! (Versiya " + currentVersion + ")\n\n📱 Iltimos, telefon raqamingizni yuboring:", {
+            await bot.sendMessage(chatId, "🚗 *ISUZU DOCTOR* tizimiga xush kelibsiz! (Versiya " + currentVersion + ")\n\n" + COPYRIGHT_TEXT.substring(0, 150) + "\n\n📱 Iltimos, telefon raqamingizni yuboring:", {
                 parse_mode: "Markdown",
                 ...getPhoneKeyboard()
             });
@@ -1440,7 +1541,7 @@ bot.onText(/\/history/, async (msg) => {
 bot.onText(/\/info/, async (msg) => {
     const chatId = msg.chat.id;
     await sendReminder(chatId);
-    await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan " + MAX_CARS_PER_USER + " tagacha avtomobil\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Bot versiyasi: `" + currentVersion + "`\n🔗 Bot linki: " + NEW_BOT_LINK + "\n📸 Instagram: " + INSTAGRAM_LINK + "\n👥 Telegram guruhimiz: " + TELEGRAM_GROUP_LINK, { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan " + MAX_CARS_PER_USER + " tagacha avtomobil\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Bot versiyasi: `" + currentVersion + "`\n🔗 Bot linki: " + NEW_BOT_LINK + "\n📸 Instagram: " + INSTAGRAM_LINK + "\n👥 Telegram guruhimiz: " + TELEGRAM_GROUP_LINK + "\n\n" + COPYRIGHT_TEXT, { parse_mode: "Markdown" });
 });
 
 bot.onText(/\/close/, async (msg) => {
@@ -1457,7 +1558,7 @@ bot.onText(/\/statistika/, async (msg) => {
     if (!isAdmin(userId)) return;
     
     const stats = getStatistics();
-    await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: " + stats.totalUsers + "\n🚫 Bloklanganlar: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 To'lovli: " + stats.paidDiagnostics + "\n🎉 Bepul: " + stats.freeDiagnostics + "\n💵 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n⚠️ Xatoliklar: " + stats.totalErrors + "\n📹 Videolar: " + stats.totalVideos + " ta\n👁️ Video ko'rishlar: " + stats.totalVideoViews + " ta\n📌 Joriy versiya: `" + stats.currentVersion + "`\n📊 Yangilanishlar soni: " + stats.versionHistoryCount + " ta\n🔄 Yangilanish rejimi: " + (stats.isUpdateMode ? "Faol" : "O'chirilgan"), { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: " + stats.totalUsers + "\n🚫 Bloklanganlar: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 To'lovli: " + stats.paidDiagnostics + "\n🎉 Bepul: " + stats.freeDiagnostics + "\n💵 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n⚠️ Xatoliklar: " + stats.totalErrors + "\n📹 Videolar: " + stats.totalVideos + " ta\n👁️ Video ko'rishlar: " + stats.totalVideoViews + " ta\n📌 Joriy versiya: `" + stats.currentVersion + "`\n📊 Yangilanishlar soni: " + stats.versionHistoryCount + " ta\n🔄 Yangilanish rejimi: " + (stats.isUpdateMode ? "Faol" : "O'chirilgan") + "\n\n🔑 Litsenziya ID: `" + uniqueInstallId + "`", { parse_mode: "Markdown" });
 });
 
 bot.onText(/\/users/, async (msg) => {
@@ -1815,7 +1916,7 @@ bot.on("message", async (msg) => {
         // STATISTIKA
         if (text === "📊 Statistika") {
             const stats = getStatistics();
-            await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol: ${stats.totalUsers}\n🚫 Bloklangan: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${stats.totalVideos} ta\n📌 Versiya: \`${stats.currentVersion}\`\n📊 Yangilanishlar: ${stats.versionHistoryCount} ta`, { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol: ${stats.totalUsers}\n🚫 Bloklangan: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${stats.totalVideos} ta\n📌 Versiya: \`${stats.currentVersion}\`\n📊 Yangilanishlar: ${stats.versionHistoryCount} ta\n🔑 Litsenziya ID: \`${uniqueInstallId}\``, { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, deviceType);
         }
         // FOYDALANUVCHILAR (sahifalangan)
@@ -1899,7 +2000,7 @@ bot.on("message", async (msg) => {
             try {
                 const allDiagnostics = getAllDiagnostics(500);
                 const filepath = await generateDiagnosticsReport(allDiagnostics);
-                await bot.sendDocument(chatId, filepath, { caption: "📊 Diagnostika hisoboti\n📅 " + formatTashkentDateTime(new Date()) });
+                await bot.sendDocument(chatId, filepath, { caption: "📊 Diagnostika hisoboti\n📅 " + formatTashkentDateTime(new Date()) + "\n\n" + COPYRIGHT_TEXT.substring(0, 100) });
                 setTimeout(() => fs.unlinkSync(filepath), 60000);
             } catch (error) {
                 await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
@@ -2016,7 +2117,8 @@ bot.on("message", async (msg) => {
             msg += `🔹 Joriy versiya: \`${versionInfo.currentVersion}\`\n`;
             msg += `🔹 Yangi bot linki: ${NEW_BOT_LINK}\n`;
             msg += `🔹 Oxirgi yangilanish: ${versionInfo.lastVersion}\n`;
-            msg += `🔹 Jami yangilanishlar: ${versionInfo.totalUpdates} ta\n\n`;
+            msg += `🔹 Jami yangilanishlar: ${versionInfo.totalUpdates} ta\n`;
+            msg += `🔹 Litsenziya ID: \`${uniqueInstallId}\`\n\n`;
             
             if (versionHistory.length > 0) {
                 msg += "📜 *YANGILANISHLAR TARIXI*\n━━━━━━━━━━━━━━━━━━\n\n";
@@ -2031,10 +2133,16 @@ bot.on("message", async (msg) => {
             const keyboard = {
                 inline_keyboard: [
                     [{ text: "🔄 Versiyani yangilash", callback_data: "admin_update_version" }],
+                    [{ text: "🔏 Avtorlik huquqi", callback_data: "admin_copyright" }],
                     [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
                 ]
             };
             await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: keyboard });
+        }
+        // AVTORLIK HUQUQI
+        else if (text === "🔏 Avtorlik huquqi") {
+            await bot.sendMessage(chatId, getCopyrightMessage(), { parse_mode: "Markdown" });
+            await sendMainMenu(chatId, true, deviceType);
         }
         // XABAR YUBORISH
         else if (text === "📢 Xabar yuborish") {
@@ -2079,6 +2187,13 @@ bot.on("callback_query", async (query) => {
     }
     
     const deviceType = getUserDevice(userId);
+    
+    // AVTORLIK HUQUQI CALLBACK
+    if (data === "user_copyright" || data === "admin_copyright") {
+        await bot.sendMessage(chatId, getCopyrightMessage(), { parse_mode: "Markdown" });
+        await sendMainMenu(chatId, isAdmin(userId), deviceType);
+        return;
+    }
     
     // Foydalanuvchi callback'lari
     if (data === "user_profile") {
@@ -2212,7 +2327,7 @@ bot.on("callback_query", async (query) => {
         await sendMainMenu(chatId, false, deviceType);
     }
     else if (data === "user_info") {
-        await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 " + MAX_CARS_PER_USER + " tagacha avtomobil\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Versiya: `" + currentVersion + "`", { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 " + MAX_CARS_PER_USER + " tagacha avtomobil\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Versiya: `" + currentVersion + "`\n\n" + COPYRIGHT_TEXT.substring(0, 100), { parse_mode: "Markdown" });
         await sendMainMenu(chatId, false, deviceType);
     }
     else if (data === "user_version_info") {
@@ -2234,6 +2349,7 @@ bot.on("callback_query", async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [{ text: "🚀 Yangi botga o'tish", url: NEW_BOT_LINK }],
+                [{ text: "🔏 Avtorlik huquqi", callback_data: "user_copyright" }],
                 [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
             ]
         };
@@ -2689,7 +2805,7 @@ bot.on("callback_query", async (query) => {
         
         updateVideoViews(videoId);
         
-        const videoText = "📹 *" + video.title + "*\n\n📝 " + (video.description || "Tavsif mavjud emas") + "\n\n👁️ " + (video.views || 0) + " | 👍 " + (video.likes || 0);
+        const videoText = "📹 *" + video.title + "*\n\n📝 " + (video.description || "Tavsif mavjud emas") + "\n\n👁️ " + (video.views || 0) + " | 👍 " + (video.likes || 0) + "\n\n" + COPYRIGHT_TEXT.substring(0, 80);
         
         const keyboard = {
             reply_markup: {
@@ -2754,5 +2870,7 @@ console.log("📹 Videolar: " + videoList.length + " ta");
 console.log("💳 Karta: " + CARD_NUMBER);
 console.log("📊 Yangilanishlar soni: " + versionHistory.length);
 console.log("💾 Volume manzili: " + VOLUME_PATH);
+console.log("🔑 Litsenziya ID: " + uniqueInstallId);
+console.log("© Muallif: " + BOT_OWNER);
 console.log("=".repeat(60));
 console.log("✅ Bot ishlashga tayyor!");
