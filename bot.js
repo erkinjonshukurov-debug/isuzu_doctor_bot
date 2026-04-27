@@ -12,90 +12,34 @@ const COPYRIGHT_TEXT = `© ${new Date().getFullYear()} ${BOT_OWNER}. Barcha huqu
 Bu botning har qanday qismidan ruxsatsiz nusxa olish, tarqatish yoki o'zgartirish taqiqlanadi.
 Litsenziya: Faqat shaxsiy va tijorat bo'lmagan maqsadlarda foydalanish mumkin.`;
 
-// =======================! KODNI HIMOYA QILISH FUNKSIYALARI ========================
-let isLicenseValid = true;
-let botStartTime = Date.now();
-let uniqueInstallId = null;
+// ======================== AVTOMATIK VERSIYA BOSHQARISH ========================
+const BASE_VERSION = "2.1.1"; // Yangi versiya
+let versionBuild = 1; // Build raqami
+let currentVersion = `${BASE_VERSION}.${versionBuild}`;
+let isUpdateMode = false;
 
-function generateUniqueInstallId() {
-    const systemInfo = [
-        os.hostname(),
-        os.cpus()[0]?.model || "unknown",
-        os.totalmem().toString(),
-        os.networkInterfaces()
-    ].join("|");
-    return crypto.createHash('sha256').update(systemInfo + LICENSE_KEY).digest('hex').substring(0, 16);
+// Versiyani avtomatik oshirish funksiyasi
+function autoIncrementVersion() {
+    const parts = BASE_VERSION.split('.');
+    parts[2] = String(parseInt(parts[2]) + 1);
+    const newBaseVersion = parts.join('.');
+    versionBuild = 1;
+    currentVersion = `${newBaseVersion}.${versionBuild}`;
+    saveVersion();
+    console.log(`📌 Versiya avtomatik yangilandi: ${currentVersion}`);
+    return currentVersion;
 }
 
-function checkLicenseIntegrity() {
-    try {
-        const installFile = path.join(VOLUME_PATH, '.install_id');
-        if (fs.existsSync(installFile)) {
-            const savedId = fs.readFileSync(installFile, 'utf8');
-            if (savedId !== uniqueInstallId) {
-                console.error("⚠️ LITSENZIYA BUZILGAN! Ruxsatsiz nusxa ko'chirish aniqlandi!");
-                return false;
-            }
-        } else {
-            fs.writeFileSync(installFile, uniqueInstallId);
-        }
-        return true;
-    } catch (err) {
-        return true;
-    }
-}
-
-function addWatermarkToCode() {
-    const watermark = `
-// ============================================================
-// AVTOR: ${BOT_OWNER}
-// TELEGRAM: ${BOT_OWNER_TELEGRAM}
-// LITSENZIYA: ${LICENSE_KEY}
-// USHBU BOTNING MUALLIFI ${BOT_OWNER} HISOBLANADI.
-// RUXSATSIZ NUSXA KO'CHIRISH, O'ZGARTIRISH YOKI TARQATISH TA'QIQLANADI!
-// ============================================================
-`;
-    return watermark;
-}
-
-function checkBotIntegrity() {
-    const expectedChecksum = "ISUZU_DOCTOR_CHECKSUM_V2";
-    try {
-        const checkFile = path.join(VOLUME_PATH, '.integrity');
-        if (fs.existsSync(checkFile)) {
-            const saved = fs.readFileSync(checkFile, 'utf8');
-            if (saved !== expectedChecksum) {
-                console.error("⚠️ BOT INTEGRITY BUZILGAN!");
-                return false;
-            }
-        } else {
-            fs.writeFileSync(checkFile, expectedChecksum);
-        }
-        return true;
-    } catch (err) {
-        return true;
-    }
-}
-
-// =======================! HIMOYA XABARLARI ========================
-function getCopyrightMessage() {
-    return `
-📜 *AVTORLIK HUQUQI*
-
-${COPYRIGHT_TEXT}
-
-👨‍💻 *Muallif:* ${BOT_OWNER}
-📞 *Telegram:* ${BOT_OWNER_TELEGRAM}
-🔑 *Litsenziya ID:* \`${uniqueInstallId}\`
-
-⚠️ Ushbu botning kodini ruxsatsiz nusxalash, o'zgartirish yoki boshqa serverda ishga tushirish qat'iyan taqiqlanadi!
-
-📌 *Rasmiy bot:* @Isuzu_doctor_bot
-`;
+// Har bir muhim operatsiyada versiyani oshirish
+function incrementVersionOnChange(changeType, adminId) {
+    const oldVersion = currentVersion;
+    const newVersion = autoIncrementVersion();
+    addVersionRecord(newVersion, `${changeType} uchun avtomatik yangilanish`, adminId);
+    console.log(`✅ Versiya ${oldVersion} -> ${newVersion} yangilandi (${changeType})`);
+    return newVersion;
 }
 
 // ======================== VERSIYA MA'LUMOTLARI ========================
-const BOT_VERSION = "2.1.0";
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
 const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
 const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy";
@@ -252,10 +196,11 @@ function addVersionRecord(version, changes, adminId) {
 
 function getVersionInfo() {
     return {
-        currentVersion: BOT_VERSION,
+        currentVersion: currentVersion,
         newBotLink: NEW_BOT_LINK,
-        lastVersion: versionHistory.length > 0 ? versionHistory[0].version : BOT_VERSION,
-        totalUpdates: versionHistory.length
+        lastVersion: versionHistory.length > 0 ? versionHistory[0].version : currentVersion,
+        totalUpdates: versionHistory.length,
+        buildNumber: versionBuild
     };
 }
 
@@ -346,12 +291,83 @@ function ensureVolumeDir() {
 ensureVolumeDir();
 
 // Unique Install ID yaratish
+let uniqueInstallId = null;
+
+function generateUniqueInstallId() {
+    const systemInfo = [
+        os.hostname(),
+        os.cpus()[0]?.model || "unknown",
+        os.totalmem().toString(),
+        os.networkInterfaces()
+    ].join("|");
+    return crypto.createHash('sha256').update(systemInfo + LICENSE_KEY).digest('hex').substring(0, 16);
+}
+
 uniqueInstallId = generateUniqueInstallId();
+
+function checkLicenseIntegrity() {
+    try {
+        const installFile = path.join(VOLUME_PATH, '.install_id');
+        if (fs.existsSync(installFile)) {
+            const savedId = fs.readFileSync(installFile, 'utf8');
+            if (savedId !== uniqueInstallId) {
+                console.error("⚠️ LITSENZIYA BUZILGAN!");
+                return false;
+            }
+        } else {
+            fs.writeFileSync(installFile, uniqueInstallId);
+        }
+        return true;
+    } catch (err) {
+        return true;
+    }
+}
+
+function checkBotIntegrity() {
+    const expectedChecksum = "ISUZU_DOCTOR_CHECKSUM_V2";
+    try {
+        const checkFile = path.join(VOLUME_PATH, '.integrity');
+        if (fs.existsSync(checkFile)) {
+            const saved = fs.readFileSync(checkFile, 'utf8');
+            if (saved !== expectedChecksum) {
+                console.error("⚠️ BOT INTEGRITY BUZILGAN!");
+                return false;
+            }
+        } else {
+            fs.writeFileSync(checkFile, expectedChecksum);
+        }
+        return true;
+    } catch (err) {
+        return true;
+    }
+}
+
 checkLicenseIntegrity();
 checkBotIntegrity();
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 bot.deleteWebHook().catch(e => console.log("Webhook xatolik:", e.message));
+
+// =======================! HIMOYA XABARLARI ========================
+function getCopyrightMessage() {
+    return `
+📜 *AVTORLIK HUQUQI*
+
+© 2026 ${BOT_OWNER}. Barcha huquqlar himoyalangan.
+
+Bu botning har qanday qismidan ruxsatsiz nusxa olish, tarqatish yoki o'zgartirish taqiqlanadi.
+
+Litsenziya: Faqat shaxsiy va tijorat bo'lmagan maqsadlarda foydalanish mumkin.
+
+👨‍💻 *Muallif:* ${BOT_OWNER}
+📞 *Telegram:* ${BOT_OWNER_TELEGRAM}
+🔑 *Litsenziya ID:* \`${uniqueInstallId}\`
+
+⚠️ Ushbu botning kodini ruxsatsiz nusxalash, o'zgartirish yoki boshqa serverda ishga tushirish qat'iyan taqiqlanadi!
+
+📌 *Rasmiy bot:* @Isuzu_doctor_bot
+`;
+}
 
 // -------------------- VIDEO FUNKSIYALARI --------------------
 function loadVideos() {
@@ -389,6 +405,7 @@ function addVideo(videoFileId, title, description, adminId) {
     videoList.unshift(newVideo);
     saveVideos();
     addSecurityLog("VIDEO_UPLOADED", adminId, "Video yuklandi: " + title);
+    incrementVersionOnChange("Video yuklandi", adminId); // Versiyani avtomatik oshirish
     return newVideo;
 }
 
@@ -581,6 +598,7 @@ function grantEditPermission(adminId, targetUserId) {
     adminSettings.allowedEditors.push(targetUserId);
     saveAdminSettings();
     addSecurityLog("GRANT_EDIT_PERMISSION", adminId, "Admin " + targetUserId + " ga ruxsat berildi");
+    incrementVersionOnChange("Admin qo'shildi", adminId); // Versiyani avtomatik oshirish
     
     return { success: true, message: "Ruxsat muvaffaqiyatli berildi!" };
 }
@@ -598,14 +616,12 @@ function revokeEditPermission(adminId, targetUserId) {
     adminSettings.allowedEditors.splice(index, 1);
     saveAdminSettings();
     addSecurityLog("REVOKE_EDIT_PERMISSION", adminId, "Admin " + targetUserId + " dan ruxsat olindi");
+    incrementVersionOnChange("Admin o'chirildi", adminId); // Versiyani avtomatik oshirish
     
     return { success: true, message: "Ruxsat muvaffaqiyatli olib qo'yildi!" };
 }
 
 // -------------------- VERSIYA BOSHQARISH --------------------
-let currentVersion = BOT_VERSION;
-let isUpdateMode = false;
-
 function loadVersion() {
     try {
         if (fs.existsSync(VERSION_FILE)) {
@@ -629,7 +645,8 @@ function saveVersion() {
         lastUpdate: new Date().toISOString(),
         newBotLink: NEW_BOT_LINK,
         installId: uniqueInstallId,
-        owner: BOT_OWNER
+        owner: BOT_OWNER,
+        buildNumber: versionBuild
     };
     fs.writeFileSync(VERSION_FILE, JSON.stringify(versionData, null, 2));
 }
@@ -676,6 +693,7 @@ function createBackup() {
         backups.shift();
     }
     console.log("✅ Backup yaratildi: " + timestamp);
+    incrementVersionOnChange("Backup yaratildi", SUPER_ADMIN_ID); // Versiyani avtomatik oshirish
     return true;
 }
 
@@ -714,6 +732,7 @@ function restoreBackup(backupName) {
     }
     
     console.log("✅ Database tiklandi: " + backupName);
+    incrementVersionOnChange("Database tiklandi", SUPER_ADMIN_ID); // Versiyani avtomatik oshirish
     return true;
 }
 
@@ -757,6 +776,7 @@ function loadData() {
         
         console.log("✅ Yuklandi: " + users.length + " foydalanuvchi, " + diagnostics.length + " diagnostika");
         console.log("✅ Volume manzili: " + VOLUME_PATH);
+        console.log("✅ Joriy versiya: " + currentVersion);
     } catch (err) {
         console.error("Ma'lumot yuklashda xatolik:", err);
         users = [];
@@ -798,6 +818,7 @@ function blockUser(userId) {
     
     user.isBlocked = true;
     saveUsers();
+    incrementVersionOnChange("Foydalanuvchi bloklandi", SUPER_ADMIN_ID); // Versiyani avtomatik oshirish
     return { success: true, message: "✅ Foydalanuvchi bloklandi: " + (user.fullName || user.phone) };
 }
 
@@ -807,6 +828,7 @@ function unblockUser(userId) {
     
     user.isBlocked = false;
     saveUsers();
+    incrementVersionOnChange("Foydalanuvchi blokdan ochildi", SUPER_ADMIN_ID); // Versiyani avtomatik oshirish
     return { success: true, message: "✅ Foydalanuvchi blokdan ochildi: " + (user.fullName || user.phone) };
 }
 
@@ -823,6 +845,7 @@ function deleteUser(userId) {
     
     users.splice(userIndex, 1);
     saveUsers();
+    incrementVersionOnChange("Foydalanuvchi o'chirildi", SUPER_ADMIN_ID); // Versiyani avtomatik oshirish
     
     return { 
         success: true, 
@@ -866,6 +889,7 @@ function addNewUser(userId, phoneNumber, carNumber, firstName, lastName, usernam
     };
     users.push(newUser);
     saveUsers();
+    incrementVersionOnChange("Yangi foydalanuvchi qo'shildi", userId); // Versiyani avtomatik oshirish
     return newUser;
 }
 
@@ -901,6 +925,7 @@ function addCarToUser(phoneNumber, carNumber, userInfo = {}) {
     });
     
     saveUsers();
+    incrementVersionOnChange("Yangi avtomobil qo'shildi", user.userId); // Versiyani avtomatik oshirish
     return { success: true, message: "Yangi avtomobil qo'shildi!", carsCount: user.cars.length };
 }
 
@@ -956,6 +981,7 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
     }
     
     saveUsers();
+    incrementVersionOnChange("Diagnostika qo'shildi", user.userId); // Versiyani avtomatik oshirish
     
     return {
         success: true,
@@ -1026,7 +1052,8 @@ function getStatistics() {
         isUpdateMode: isUpdateMode,
         totalVideos: videoList.length,
         totalVideoViews: videoList.reduce((sum, v) => sum + (v.views || 0), 0),
-        versionHistoryCount: versionHistory.length
+        versionHistoryCount: versionHistory.length,
+        buildNumber: versionBuild
     };
 }
 
@@ -1200,8 +1227,6 @@ function getAdminReplyKeyboard() {
         ["🔏 Avtorlik huquqi", "❌ Asosiy menyu"]
     ];
     
-    keyboard.push(["❌ Asosiy menyu"]);
-    
     return {
         reply_markup: {
             keyboard: keyboard,
@@ -1234,13 +1259,14 @@ function removeKeyboard() {
 // Asosiy menyuni yuborish
 async function sendMainMenu(chatId, isAdminUser = false, deviceType = "web") {
     try {
+        const stats = getStatistics();
         if (isAdminUser) {
-            await bot.sendMessage(chatId, "👑 *Admin paneli*\n\n" + COPYRIGHT_TEXT.substring(0, 100), {
+            await bot.sendMessage(chatId, "👑 *Admin paneli*\n\n📌 Bot versiyasi: `" + currentVersion + "`\n🔑 Litsenziya ID: `" + uniqueInstallId + "`\n\n" + COPYRIGHT_TEXT.substring(0, 100), {
                 parse_mode: "Markdown",
                 ...getAdminReplyKeyboard()
             });
         } else {
-            await bot.sendMessage(chatId, "🏠 *Asosiy menyu*\n\n📌 Sizning versiyangiz: `" + currentVersion + "`", {
+            await bot.sendMessage(chatId, "🏠 *Asosiy menyu*\n\n📌 Sizning versiyangiz: `" + currentVersion + "`\n🚗 Isuzu Doctor bot", {
                 parse_mode: "Markdown",
                 ...getCompactInlineKeyboard()
             });
@@ -1558,7 +1584,7 @@ bot.onText(/\/statistika/, async (msg) => {
     if (!isAdmin(userId)) return;
     
     const stats = getStatistics();
-    await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: " + stats.totalUsers + "\n🚫 Bloklanganlar: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 To'lovli: " + stats.paidDiagnostics + "\n🎉 Bepul: " + stats.freeDiagnostics + "\n💵 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n⚠️ Xatoliklar: " + stats.totalErrors + "\n📹 Videolar: " + stats.totalVideos + " ta\n👁️ Video ko'rishlar: " + stats.totalVideoViews + " ta\n📌 Joriy versiya: `" + stats.currentVersion + "`\n📊 Yangilanishlar soni: " + stats.versionHistoryCount + " ta\n🔄 Yangilanish rejimi: " + (stats.isUpdateMode ? "Faol" : "O'chirilgan") + "\n\n🔑 Litsenziya ID: `" + uniqueInstallId + "`", { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: " + stats.totalUsers + "\n🚫 Bloklanganlar: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 To'lovli: " + stats.paidDiagnostics + "\n🎉 Bepul: " + stats.freeDiagnostics + "\n💵 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n⚠️ Xatoliklar: " + stats.totalErrors + "\n📹 Videolar: " + stats.totalVideos + " ta\n👁️ Video ko'rishlar: " + stats.totalVideoViews + " ta\n📌 Joriy versiya: `" + stats.currentVersion + "`\n📊 Yangilanishlar soni: " + stats.versionHistoryCount + " ta\n🔄 Yangilanish rejimi: " + (stats.isUpdateMode ? "Faol" : "O'chirilgan") + "\n🔢 Build raqami: " + stats.buildNumber + "\n\n🔑 Litsenziya ID: `" + uniqueInstallId + "`", { parse_mode: "Markdown" });
 });
 
 bot.onText(/\/users/, async (msg) => {
@@ -1636,7 +1662,7 @@ bot.on("message", async (msg) => {
         session.data.description = text || "";
         addVideo(session.data.videoFileId, session.data.title, session.data.description, userId);
         
-        await bot.sendMessage(chatId, "✅ *Video muvaffaqiyatli yuklandi!*\n\n📹 *Nomi:* " + session.data.title, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, "✅ *Video muvaffaqiyatli yuklandi!*\n\n📹 *Nomi:* " + session.data.title + "\n📌 Versiya yangilandi: " + currentVersion, { parse_mode: "Markdown" });
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, getUserDevice(userId));
@@ -1670,7 +1696,7 @@ bot.on("message", async (msg) => {
         
         const result = await sendNotificationToAllUsers(messageText, keyboard);
         
-        await bot.sendMessage(chatId, `✅ *Xabar yuborildi!*\n\n✅ Yuborildi: ${result.success} ta foydalanuvchiga\n❌ Yuborilmadi: ${result.fail} ta`, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, `✅ *Xabar yuborildi!*\n\n✅ Yuborildi: ${result.success} ta foydalanuvchiga\n❌ Yuborilmadi: ${result.fail} ta\n📌 Versiya yangilandi: ${currentVersion}`, { parse_mode: "Markdown" });
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, getUserDevice(userId));
@@ -1757,7 +1783,7 @@ bot.on("message", async (msg) => {
             await sendMainMenu(chatId, false, deviceType);
             
             for (const adminId of ADMIN_IDS) {
-                bot.sendMessage(adminId, "🆕 *YANGI FOYDALANUVCHI!*\n\n👤 " + (userFullName.trim() || "Mijoz") + "\n📞 " + session.data.phone + "\n🚗 " + carNumber, { parse_mode: "Markdown" }).catch(() => {});
+                bot.sendMessage(adminId, "🆕 *YANGI FOYDALANUVCHI!*\n\n👤 " + (userFullName.trim() || "Mijoz") + "\n📞 " + session.data.phone + "\n🚗 " + carNumber + "\n📌 Versiya: " + currentVersion, { parse_mode: "Markdown" }).catch(() => {});
             }
         } catch (error) {
             console.error("Ro'yxatdan o'tkazish xatolik:", error);
@@ -1781,7 +1807,7 @@ bot.on("message", async (msg) => {
         });
         
         if (result.success) {
-            await bot.sendMessage(chatId, "✅ *Yangi avtomobil qo'shildi!*\n\n🚗 " + carNumber, { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "✅ *Yangi avtomobil qo'shildi!*\n\n🚗 " + carNumber + "\n📌 Versiya: " + currentVersion, { parse_mode: "Markdown" });
         } else {
             await bot.sendMessage(chatId, "❌ " + result.message, { parse_mode: "Markdown" });
         }
@@ -1853,7 +1879,7 @@ bot.on("message", async (msg) => {
             session.data.additionalNotes
         );
         
-        let adminResponse = "🔧 *DIAGNOSTIKA QO'SHILDI*\n\n👤 " + (session.data.targetUser.fullName || "Ismsiz") + "\n🚗 " + result.carNumber + "\n💰 " + result.price.toLocaleString() + " so'm\n\n" + result.bonusMessage;
+        let adminResponse = "🔧 *DIAGNOSTIKA QO'SHILDI*\n\n👤 " + (session.data.targetUser.fullName || "Ismsiz") + "\n🚗 " + result.carNumber + "\n💰 " + result.price.toLocaleString() + " so'm\n\n" + result.bonusMessage + "\n📌 Versiya yangilandi: " + currentVersion;
         
         await bot.sendMessage(chatId, adminResponse, { parse_mode: "Markdown" });
         
@@ -1867,8 +1893,9 @@ bot.on("message", async (msg) => {
             userMsg += "📌 *Eslatma:*\n" + session.data.additionalNotes + "\n\n";
         }
         
-        userMsg += "💰 *Narx:* " + result.price.toLocaleString() + " so'm\n\n";
+        userMsg += "💰 *Narx:* " + (result.isFree ? "BEPUL" : result.price.toLocaleString() + " so'm") + "\n\n";
         userMsg += result.bonusMessage;
+        userMsg += "\n📌 Bot versiyasi: " + currentVersion;
         
         bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: "Markdown" }).catch(() => {});
         
@@ -1893,7 +1920,7 @@ bot.on("message", async (msg) => {
         }
         
         const result = grantEditPermission(userId, targetAdminId);
-        await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, result.message + "\n📌 Versiya yangilandi: " + currentVersion, { parse_mode: "Markdown" });
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, deviceType);
@@ -1916,7 +1943,7 @@ bot.on("message", async (msg) => {
         // STATISTIKA
         if (text === "📊 Statistika") {
             const stats = getStatistics();
-            await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol: ${stats.totalUsers}\n🚫 Bloklangan: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${stats.totalVideos} ta\n📌 Versiya: \`${stats.currentVersion}\`\n📊 Yangilanishlar: ${stats.versionHistoryCount} ta\n🔑 Litsenziya ID: \`${uniqueInstallId}\``, { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol: ${stats.totalUsers}\n🚫 Bloklangan: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${stats.totalVideos} ta\n📌 Versiya: \`${stats.currentVersion}\`\n📊 Yangilanishlar: ${stats.versionHistoryCount} ta\n🔢 Build: ${stats.buildNumber}\n🔑 Litsenziya ID: \`${uniqueInstallId}\``, { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, deviceType);
         }
         // FOYDALANUVCHILAR (sahifalangan)
@@ -2000,7 +2027,7 @@ bot.on("message", async (msg) => {
             try {
                 const allDiagnostics = getAllDiagnostics(500);
                 const filepath = await generateDiagnosticsReport(allDiagnostics);
-                await bot.sendDocument(chatId, filepath, { caption: "📊 Diagnostika hisoboti\n📅 " + formatTashkentDateTime(new Date()) + "\n\n" + COPYRIGHT_TEXT.substring(0, 100) });
+                await bot.sendDocument(chatId, filepath, { caption: "📊 Diagnostika hisoboti\n📅 " + formatTashkentDateTime(new Date()) + "\n📌 Versiya: " + currentVersion + "\n\n" + COPYRIGHT_TEXT.substring(0, 100) });
                 setTimeout(() => fs.unlinkSync(filepath), 60000);
             } catch (error) {
                 await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
@@ -2023,7 +2050,7 @@ bot.on("message", async (msg) => {
         else if (text === "💾 Backup") {
             await bot.sendMessage(chatId, "💾 *Backup yaratilmoqda...*", { parse_mode: "Markdown" });
             createBackup();
-            await bot.sendMessage(chatId, "✅ *Backup yaratildi!*", { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "✅ *Backup yaratildi!*\n📌 Versiya yangilandi: " + currentVersion, { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, deviceType);
         }
         // DATABASE TIKLASH
@@ -2039,7 +2066,7 @@ bot.on("message", async (msg) => {
                 await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
             }
         }
-        // FOYDALANUVCHILARNI BOSHQARISH (FAQAT AVTOMOBIL RAQAMI BILAN)
+        // FOYDALANUVCHILARNI BOSHQARISH
         else if (text === "🚫 Foyd. boshqarish") {
             const activeUsers = getActiveUsers();
             const blockedUsers = getBlockedUsers();
@@ -2118,6 +2145,7 @@ bot.on("message", async (msg) => {
             msg += `🔹 Yangi bot linki: ${NEW_BOT_LINK}\n`;
             msg += `🔹 Oxirgi yangilanish: ${versionInfo.lastVersion}\n`;
             msg += `🔹 Jami yangilanishlar: ${versionInfo.totalUpdates} ta\n`;
+            msg += `🔹 Build raqami: ${versionInfo.buildNumber}\n`;
             msg += `🔹 Litsenziya ID: \`${uniqueInstallId}\`\n\n`;
             
             if (versionHistory.length > 0) {
@@ -2364,7 +2392,7 @@ bot.on("callback_query", async (query) => {
         }
         const session = getUserSession(userId);
         session.step = "admin_update_version";
-        await bot.sendMessage(chatId, "🔄 *VERSIYANI YANGILASH*\n\nYangi versiya raqamini kiriting (masalan: 2.1.0):\n\n❌ Bekor qilish uchun /cancel yozing.", { parse_mode: "Markdown", reply_markup: { remove_keyboard: true } });
+        await bot.sendMessage(chatId, "🔄 *VERSIYANI YANGILASH*\n\nYangi versiya raqamini kiriting (masalan: 2.1.2):\n\n❌ Bekor qilish uchun /cancel yozing.", { parse_mode: "Markdown", reply_markup: { remove_keyboard: true } });
     }
     
     // OYLIK DAROMAD TAHLILI CALLBACK'LARI
@@ -2708,7 +2736,7 @@ bot.on("callback_query", async (query) => {
         }
         const targetAdminId = parseInt(data.split("_")[2]);
         const result = revokeEditPermission(userId, targetAdminId);
-        await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, result.message + "\n📌 Versiya yangilandi: " + currentVersion, { parse_mode: "Markdown" });
         await sendMainMenu(chatId, true, deviceType);
     }
     else if (data.startsWith("restore_")) {
@@ -2718,7 +2746,7 @@ bot.on("callback_query", async (query) => {
             loadData();
             loadVideos();
             loadVersionHistory();
-            await bot.sendMessage(chatId, "✅ *Database tiklandi!*", { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "✅ *Database tiklandi!*\n📌 Versiya yangilandi: " + currentVersion, { parse_mode: "Markdown" });
         } else {
             await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
         }
@@ -2740,7 +2768,7 @@ bot.on("callback_query", async (query) => {
         }
         
         const carsList = targetUser.cars.map(c => c.carNumber).join(", ");
-        const userInfo = `👤 *${targetUser.fullName || "Ismsiz"}*\n📞 ${targetUser.phone}\n🚗 ${carsList}\n📊 ${targetUser.totalDiagnosticsAll || 0} ta diagnostika\n🚦 ${targetUser.isBlocked ? "🔴 BLOKLANGAN" : "🟢 FAOL"}`;
+        const userInfo = `👤 *${targetUser.fullName || "Ismsiz"}*\n📞 ${targetUser.phone}\n🚗 ${carsList}\n📊 ${targetUser.totalDiagnosticsAll || 0} ta diagnostika\n🚦 ${targetUser.isBlocked ? "🔴 BLOKLANGAN" : "🟢 FAOL"}\n📌 Versiya: ${currentVersion}`;
         
         const keyboard = [];
         if (targetUser.isBlocked) {
@@ -2761,13 +2789,13 @@ bot.on("callback_query", async (query) => {
     else if (data.startsWith("block_user_")) {
         const targetUserId = parseInt(data.split("_")[2]);
         const result = blockUser(targetUserId);
-        await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, result.message + "\n📌 Versiya yangilandi: " + currentVersion, { parse_mode: "Markdown" });
         await sendMainMenu(chatId, true, deviceType);
     }
     else if (data.startsWith("unblock_user_")) {
         const targetUserId = parseInt(data.split("_")[2]);
         const result = unblockUser(targetUserId);
-        await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, result.message + "\n📌 Versiya yangilandi: " + currentVersion, { parse_mode: "Markdown" });
         await sendMainMenu(chatId, true, deviceType);
     }
     else if (data.startsWith("delete_user_")) {
@@ -2788,7 +2816,7 @@ bot.on("callback_query", async (query) => {
     else if (data.startsWith("confirm_delete_")) {
         const targetUserId = parseInt(data.split("_")[2]);
         const result = deleteUser(targetUserId);
-        await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, result.message + "\n📌 Versiya yangilandi: " + currentVersion, { parse_mode: "Markdown" });
         userManagePage = 0;
         await sendMainMenu(chatId, true, deviceType);
     }
@@ -2805,7 +2833,7 @@ bot.on("callback_query", async (query) => {
         
         updateVideoViews(videoId);
         
-        const videoText = "📹 *" + video.title + "*\n\n📝 " + (video.description || "Tavsif mavjud emas") + "\n\n👁️ " + (video.views || 0) + " | 👍 " + (video.likes || 0) + "\n\n" + COPYRIGHT_TEXT.substring(0, 80);
+        const videoText = "📹 *" + video.title + "*\n\n📝 " + (video.description || "Tavsif mavjud emas") + "\n\n👁️ " + (video.views || 0) + " | 👍 " + (video.likes || 0) + "\n\n" + COPYRIGHT_TEXT.substring(0, 80) + "\n📌 Versiya: " + currentVersion;
         
         const keyboard = {
             reply_markup: {
@@ -2859,10 +2887,14 @@ loadAdminSettings();
 loadVideos();
 loadVersionHistory();
 
+// Yangi versiyani joriy qilish
+currentVersion = `${BASE_VERSION}.${versionBuild}`;
+saveVersion();
+
 console.log("=".repeat(60));
 console.log("🚗 ISUZU DOCTOR BOT ISHGA TUSHDI");
 console.log("=".repeat(60));
-console.log("📌 Versiya: " + BOT_VERSION);
+console.log("📌 Versiya: " + currentVersion);
 console.log("👑 Adminlar: " + ADMIN_IDS.join(", "));
 console.log("👥 Foydalanuvchilar: " + users.filter(u => !u.isAdmin).length);
 console.log("🔧 Diagnostikalar: " + diagnostics.length);
