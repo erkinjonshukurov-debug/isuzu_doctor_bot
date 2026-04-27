@@ -777,6 +777,41 @@ function isAdmin(userId) {
     return user ? user.isAdmin === true : false;
 }
 
+// TUZATILGAN: deleteUser funksiyasi
+function deleteUser(userId) {
+    // userId ni turli formatlarda qidirish
+    let userIndex = users.findIndex(u => u.userId === userId);
+    
+    if (userIndex === -1) {
+        userIndex = users.findIndex(u => u.userId == userId);
+    }
+    
+    if (userIndex === -1) {
+        userIndex = users.findIndex(u => String(u.userId) === String(userId));
+    }
+    
+    if (userIndex === -1) return { success: false, message: "❌ Foydalanuvchi topilmadi!" };
+    
+    const user = users[userIndex];
+    if (user.isAdmin) return { success: false, message: "❌ Adminni o'chirib bo'lmaydi!" };
+    
+    // Avtomobili yo'q foydalanuvchilarni o'chirish
+    const userDiagnostics = diagnostics.filter(d => d.userId === userId || d.userId == userId);
+    diagnostics = diagnostics.filter(d => d.userId !== userId && d.userId != userId);
+    saveDiagnostics();
+    
+    users.splice(userIndex, 1);
+    saveUsers();
+    incrementVersion();
+    addVersionRecord(currentVersion, "Foydalanuvchi o'chirildi: " + (user.fullName || user.phone), SUPER_ADMIN_ID);
+    
+    return { 
+        success: true, 
+        message: "🗑️ Foydalanuvchi o'chirildi: " + (user.fullName || user.phone),
+        deletedDiagnostics: userDiagnostics.length
+    };
+}
+
 function blockUser(userId) {
     const user = getUserByUserId(userId);
     if (!user) return { success: false, message: "Foydalanuvchi topilmadi" };
@@ -798,29 +833,6 @@ function unblockUser(userId) {
     incrementVersion();
     addVersionRecord(currentVersion, "Foydalanuvchi blokdan ochildi: " + (user.fullName || user.phone), SUPER_ADMIN_ID);
     return { success: true, message: "✅ Foydalanuvchi blokdan ochildi: " + (user.fullName || user.phone) };
-}
-
-function deleteUser(userId) {
-    const userIndex = users.findIndex(u => u.userId === userId);
-    if (userIndex === -1) return { success: false, message: "Foydalanuvchi topilmadi" };
-    
-    const user = users[userIndex];
-    if (user.isAdmin) return { success: false, message: "Adminni o'chirib bo'lmaydi!" };
-    
-    const userDiagnostics = diagnostics.filter(d => d.userId === userId);
-    diagnostics = diagnostics.filter(d => d.userId !== userId);
-    saveDiagnostics();
-    
-    users.splice(userIndex, 1);
-    saveUsers();
-    incrementVersion();
-    addVersionRecord(currentVersion, "Foydalanuvchi o'chirildi: " + (user.fullName || user.phone), SUPER_ADMIN_ID);
-    
-    return { 
-        success: true, 
-        message: "🗑️ Foydalanuvchi o'chirildi: " + (user.fullName || user.phone),
-        deletedDiagnostics: userDiagnostics.length
-    };
 }
 
 function getBlockedUsers() {
@@ -1127,10 +1139,11 @@ async function showUsersList(chatId, page, messageId = null) {
         const u = pageUsers[i];
         const num = start + i + 1;
         const status = u.isBlocked ? "🔴" : "🟢";
+        const carNumber = u.cars.length > 0 ? u.cars[0].carNumber : "❌ Avto yo'q";
         msg += `${status} *${num}. ${(u.fullName || "Ismsiz").substring(0, 20)}*\n`;
         msg += `📞 ${u.phone}\n`;
-        const carsStr = u.cars.map(c => c.carNumber).join(", ");
-        msg += `🚗 ${carsStr.substring(0, 35)}${carsStr.length > 35 ? "..." : ""}\n`;
+        msg += `🚗 ${carNumber}\n`;
+        msg += `🆔 ID: ${u.userId}\n`;
         msg += `📊 ${u.totalDiagnostics} ta diagnostika\n`;
         msg += "━━━━━━━━━━━━━━━━━━\n";
     }
@@ -1261,6 +1274,54 @@ function clearUserSession(userId) {
 
 // -------------------- FOYDALANUVCHILARNI BOSHQARISH (SAHIFALASH) --------------------
 let userManagePage = 0;
+
+// -------------------- ADMIN BUYRUQLARI (Telefon yoki avto raqam bo'yicha o'chirish) --------------------
+bot.onText(/\/deleteuser (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    if (!isAdmin(userId)) return;
+    
+    const phoneOrCar = match[1].trim();
+    
+    // Telefon raqam bo'yicha qidirish
+    let targetUser = getUserByPhone(phoneOrCar);
+    
+    // Agar topilmasa, avtomobil raqami bo'yicha qidirish
+    if (!targetUser) {
+        targetUser = users.find(u => u.cars.some(c => c.carNumber === phoneOrCar));
+    }
+    
+    if (!targetUser) {
+        await bot.sendMessage(chatId, "❌ *Foydalanuvchi topilmadi!*", { parse_mode: "Markdown" });
+        return;
+    }
+    
+    const result = deleteUser(targetUser.userId);
+    await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
+});
+
+// Barcha foydalanuvchilarni ID bilan ko'rish
+bot.onText(/\/listusers/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    if (!isAdmin(userId)) return;
+    
+    let msgText = "📋 *FOYDALANUVCHILAR RO'YXATI (ID bilan)*\n━━━━━━━━━━━━━━━━━━\n\n";
+    
+    users.filter(u => !u.isAdmin).forEach((u, index) => {
+        const carNumber = u.cars.length > 0 ? u.cars[0].carNumber : "❌ Avto yo'q";
+        msgText += `${index + 1}. ID: \`${u.userId}\`\n`;
+        msgText += `   👤 ${u.fullName || "Ismsiz"}\n`;
+        msgText += `   📞 ${u.phone}\n`;
+        msgText += `   🚗 ${carNumber}\n`;
+        msgText += `   🚦 ${u.isBlocked ? "🔴 Bloklangan" : "🟢 Faol"}\n`;
+        msgText += "━━━━━━━━━━━━━━━━━━\n";
+    });
+    
+    await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
+});
 
 // -------------------- /start KOMANDASI --------------------
 bot.onText(/\/start/, async (msg) => {
@@ -2035,10 +2096,11 @@ bot.on("message", async (msg) => {
                 await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
             }
         }
-        // FOYDALANUVCHILARNI BOSHQARISH
+        // FOYDALANUVCHILARNI BOSHQARISH (TUZATILGAN)
         else if (text === "🚫 Foyd. boshqarish") {
             const activeUsers = getActiveUsers();
             const blockedUsers = getBlockedUsers();
+            // Barcha foydalanuvchilarni ko'rsatish (ID bilan)
             const allUsers = [...activeUsers, ...blockedUsers];
             
             if (allUsers.length === 0) {
@@ -2061,7 +2123,7 @@ bot.on("message", async (msg) => {
                 const userObj = pageUsers[i];
                 const num = start + i + 1;
                 const status = userObj.isBlocked ? "🔴" : "🟢";
-                const carNumber = userObj.cars.length > 0 ? userObj.cars[0].carNumber : "🚫 Avto yo'q";
+                const carNumber = userObj.cars.length > 0 ? userObj.cars[0].carNumber : "❌ Avto yo'q";
                 const displayText = `${status} ${num}. ${carNumber}`;
                 
                 row.push({ text: displayText.substring(0, 20), callback_data: `manage_user_${userObj.userId}` });
@@ -2520,7 +2582,7 @@ bot.on("callback_query", async (query) => {
                 const userObj = pageUsers[i];
                 const num = start + i + 1;
                 const status = userObj.isBlocked ? "🔴" : "🟢";
-                const carNumber = userObj.cars.length > 0 ? userObj.cars[0].carNumber : "🚫 Avto yo'q";
+                const carNumber = userObj.cars.length > 0 ? userObj.cars[0].carNumber : "❌ Avto yo'q";
                 const displayText = `${status} ${num}. ${carNumber}`;
                 
                 row.push({ text: displayText.substring(0, 20), callback_data: `manage_user_${userObj.userId}` });
@@ -2581,7 +2643,7 @@ bot.on("callback_query", async (query) => {
             const userObj = pageUsers[i];
             const num = start + i + 1;
             const status = userObj.isBlocked ? "🔴" : "🟢";
-            const carNumber = userObj.cars.length > 0 ? userObj.cars[0].carNumber : "🚫 Avto yo'q";
+            const carNumber = userObj.cars.length > 0 ? userObj.cars[0].carNumber : "❌ Avto yo'q";
             const displayText = `${status} ${num}. ${carNumber}`;
             
             row.push({ text: displayText.substring(0, 20), callback_data: `manage_user_${userObj.userId}` });
@@ -2710,24 +2772,49 @@ bot.on("callback_query", async (query) => {
     else if (data === "user_manage_cancel") {
         await sendMainMenu(chatId, true, deviceType);
     }
+    // TUZATILGAN: manage_user_ callback
     else if (data.startsWith("manage_user_")) {
         const targetUserId = parseInt(data.split("_")[2]);
-        const targetUser = getUserByUserId(targetUserId);
+        
+        let targetUser = null;
+        
+        // 1-usul: to'g'ridan-to'g'ri userId bo'yicha qidirish
+        targetUser = getUserByUserId(targetUserId);
+        
+        // 2-usul: agar topilmasa, users massividan qidirish (string formatda)
         if (!targetUser) {
-            await bot.sendMessage(chatId, "❌ Foydalanuvchi topilmadi!", { parse_mode: "Markdown" });
+            targetUser = users.find(u => u.userId == targetUserId);
+        }
+        
+        // 3-usul: agar hali topilmasa, toString bilan solishtirish
+        if (!targetUser) {
+            targetUser = users.find(u => String(u.userId) === String(targetUserId));
+        }
+        
+        // 4-usul: phone bo'yicha qidirish
+        if (!targetUser) {
+            const parts = data.split("_");
+            if (parts.length > 3) {
+                const userPhone = parts.slice(3).join("_");
+                targetUser = getUserByPhone(userPhone);
+            }
+        }
+        
+        if (!targetUser) {
+            await bot.sendMessage(chatId, "❌ *Foydalanuvchi topilmadi!*\nID: " + targetUserId + "\n\nSababi: Foydalanuvchi ma'lumotlar bazasida mavjud emas.", { parse_mode: "Markdown" });
             return;
         }
         
         const carsList = targetUser.cars.map(c => c.carNumber).join(", ");
-        const userInfo = `👤 *${targetUser.fullName || "Ismsiz"}*\n📞 ${targetUser.phone}\n🚗 ${carsList}\n📊 ${targetUser.totalDiagnosticsAll || 0} ta diagnostika\n🚦 ${targetUser.isBlocked ? "🔴 BLOKLANGAN" : "🟢 FAOL"}\n📌 Versiya: V${currentVersion}`;
+        const userInfo = `👤 *${targetUser.fullName || "Ismsiz"}*\n📞 ${targetUser.phone}\n🚗 ${carsList || "Avtomobil yo'q"}\n📊 ${targetUser.totalDiagnosticsAll || 0} ta diagnostika\n🚦 ${targetUser.isBlocked ? "🔴 BLOKLANGAN" : "🟢 FAOL"}\n🆔 ID: ${targetUser.userId}\n📌 Versiya: V${currentVersion}`;
         
         const keyboard = [];
         if (targetUser.isBlocked) {
-            keyboard.push([{ text: "✅ Blokdan ochish", callback_data: "unblock_user_" + targetUserId }]);
+            keyboard.push([{ text: "✅ Blokdan ochish", callback_data: "unblock_user_" + targetUser.userId }]);
         } else {
-            keyboard.push([{ text: "🚫 Bloklash", callback_data: "block_user_" + targetUserId }]);
+            keyboard.push([{ text: "🚫 Bloklash", callback_data: "block_user_" + targetUser.userId }]);
         }
-        keyboard.push([{ text: "🗑️ O'chirish", callback_data: "delete_user_" + targetUserId }]);
+        keyboard.push([{ text: "🗑️ O'chirish", callback_data: "delete_user_" + targetUser.userId }]);
         keyboard.push([{ text: "🔙 Orqaga", callback_data: "admin_manage_users_back" }]);
         
         await bot.editMessageText(userInfo, {
@@ -2767,7 +2854,7 @@ bot.on("callback_query", async (query) => {
     else if (data.startsWith("confirm_delete_")) {
         const targetUserId = parseInt(data.split("_")[2]);
         const result = deleteUser(targetUserId);
-        await bot.sendMessage(chatId, result.message + "\n📌 Versiya yangilandi: V" + currentVersion, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
         userManagePage = 0;
         await sendMainMenu(chatId, true, deviceType);
     }
