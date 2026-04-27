@@ -10,7 +10,7 @@ const BOT_OWNER = "Erkinjon Shukurov";
 const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
 
 // ======================== ODDIY VERSIYA TIZIMI ========================
-let currentVersion = "2.1"; // Boshlang'ich versiya
+let currentVersion = "2.1";
 
 // Versiyani oshirish funksiyasi (2.1 -> 2.2 -> 2.3)
 function incrementVersion() {
@@ -331,28 +331,6 @@ checkBotIntegrity();
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 bot.deleteWebHook().catch(e => console.log("Webhook xatolik:", e.message));
 
-// =======================! AVTORLIK HUQUQI XABARI ========================
-function getCopyrightMessage() {
-    return `
-📜 *AVTORLIK HUQUQI*
-
-© 2026 ${BOT_OWNER}. Barcha huquqlar himoyalangan.
-
-Bu botning har qanday qismidan ruxsatsiz nusxa olish, tarqatish yoki o'zgartirish taqiqlanadi.
-
-Litsenziya: Faqat shaxsiy va tijorat bo'lmagan maqsadlarda foydalanish mumkin.
-
-👨‍💻 *Muallif:* ${BOT_OWNER}
-📞 *Telegram:* ${BOT_OWNER_TELEGRAM}
-🔑 *Litsenziya ID:* \`${uniqueInstallId}\`
-
-⚠️ Ushbu botning kodini ruxsatsiz nusxalash, o'zgartirish yoki boshqa serverda ishga tushirish qat'iyan taqiqlanadi!
-
-📌 *Rasmiy bot:* @Isuzu_doctor_bot
-📌 *Bot versiyasi:* V${currentVersion}
-`;
-}
-
 // -------------------- VIDEO FUNKSIYALARI --------------------
 function loadVideos() {
     try {
@@ -389,7 +367,7 @@ function addVideo(videoFileId, title, description, adminId) {
     videoList.unshift(newVideo);
     saveVideos();
     addSecurityLog("VIDEO_UPLOADED", adminId, "Video yuklandi: " + title);
-    incrementVersion(); // Versiyani oshirish
+    incrementVersion();
     addVersionRecord(currentVersion, "Video yuklandi: " + title, adminId);
     return newVideo;
 }
@@ -616,10 +594,12 @@ function loadVersion() {
             currentVersion = versionData.version;
             console.log("📌 Joriy versiya: V" + currentVersion);
         } else {
+            currentVersion = "2.1";
             saveVersion();
         }
     } catch (err) {
         console.error("Versiya yuklashda xatolik:", err);
+        currentVersion = "2.1";
         saveVersion();
     }
 }
@@ -1196,7 +1176,7 @@ function getCompactInlineKeyboard() {
                 [{ text: "📋 Tarix", callback_data: "user_history" }, { text: "📹 Video", callback_data: "user_video_gallery" }],
                 [{ text: "💳 To'lov", callback_data: "user_payment" }, { text: "📸 Instagram", callback_data: "user_instagram" }],
                 [{ text: "👥 Guruh", callback_data: "user_telegram_group" }, { text: "ℹ️ Ma'lumot", callback_data: "user_info" }],
-                [{ text: "📌 Versiya", callback_data: "user_version_info" }, { text: "🔏 Avtorlik", callback_data: "user_copyright" }]
+                [{ text: "📌 Versiya", callback_data: "user_version_info" }]
             ],
             resize_keyboard: true
         }
@@ -1214,7 +1194,7 @@ function getAdminReplyKeyboard() {
         ["💾 Backup", "🔄 Tiklash"],
         ["🚫 Foyd. boshqarish", "🔐 Xavfsizlik"],
         ["📌 Versiya", "📢 Xabar yuborish"],
-        ["🔏 Avtorlik huquqi", "❌ Asosiy menyu"]
+        ["❌ Asosiy menyu"]
     ];
     
     return {
@@ -1986,7 +1966,7 @@ bot.on("message", async (msg) => {
             }
             await sendMainMenu(chatId, true, deviceType);
         }
-        // BUGUNGI DIAGNOSTIKALAR VA OYLIK TAHLIL
+        // BUGUNGI DIAGNOSTIKALAR
         else if (text === "📅 Bugungi") {
             const diags = getTodayDiagnostics();
             const keyboard = {
@@ -2146,16 +2126,10 @@ bot.on("message", async (msg) => {
             const keyboard = {
                 inline_keyboard: [
                     [{ text: "🔄 Versiyani yangilash", callback_data: "admin_update_version" }],
-                    [{ text: "🔏 Avtorlik huquqi", callback_data: "admin_copyright" }],
                     [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
                 ]
             };
             await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: keyboard });
-        }
-        // AVTORLIK HUQUQI
-        else if (text === "🔏 Avtorlik huquqi") {
-            await bot.sendMessage(chatId, getCopyrightMessage(), { parse_mode: "Markdown" });
-            await sendMainMenu(chatId, true, deviceType);
         }
         // XABAR YUBORISH
         else if (text === "📢 Xabar yuborish") {
@@ -2200,13 +2174,6 @@ bot.on("callback_query", async (query) => {
     }
     
     const deviceType = getUserDevice(userId);
-    
-    // AVTORLIK HUQUQI CALLBACK
-    if (data === "user_copyright" || data === "admin_copyright") {
-        await bot.sendMessage(chatId, getCopyrightMessage(), { parse_mode: "Markdown" });
-        await sendMainMenu(chatId, isAdmin(userId), deviceType);
-        return;
-    }
     
     // Foydalanuvchi callback'lari
     if (data === "user_profile") {
@@ -2362,7 +2329,6 @@ bot.on("callback_query", async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [{ text: "🚀 Yangi botga o'tish", url: NEW_BOT_LINK }],
-                [{ text: "🔏 Avtorlik huquqi", callback_data: "user_copyright" }],
                 [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
             ]
         };
@@ -2871,12 +2837,6 @@ loadData();
 loadAdminSettings();
 loadVideos();
 loadVersionHistory();
-
-// Agar versiya fayli bo'lmasa, 2.1 dan boshlash
-if (!fs.existsSync(VERSION_FILE)) {
-    currentVersion = "2.1";
-    saveVersion();
-}
 
 console.log("=".repeat(60));
 console.log("🚗 ISUZU DOCTOR BOT ISHGA TUSHDI");
