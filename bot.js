@@ -2926,8 +2926,6 @@ loadVersionHistory();
 console.log("=".repeat(60));
 console.log("🚗 ISUZU DOCTOR BOT ISHGA TUSHDI");
 console.log("=".repeat(60));
-console.log("🚗 ISUZU DOCTOR BOT ISHGA TUSHDI");
-console.log("=".repeat(60));
 console.log("📌 Versiya: V" + currentVersion);
 console.log("👑 Adminlar: " + ADMIN_IDS.join(", "));
 console.log("👥 Foydalanuvchilar: " + users.filter(u => !u.isAdmin).length);
