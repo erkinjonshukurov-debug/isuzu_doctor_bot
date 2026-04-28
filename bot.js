@@ -779,23 +779,14 @@ function isAdmin(userId) {
 
 // TUZATILGAN: deleteUser funksiyasi
 function deleteUser(userId) {
-    // userId ni turli formatlarda qidirish
     let userIndex = users.findIndex(u => u.userId === userId);
-    
-    if (userIndex === -1) {
-        userIndex = users.findIndex(u => u.userId == userId);
-    }
-    
-    if (userIndex === -1) {
-        userIndex = users.findIndex(u => String(u.userId) === String(userId));
-    }
-    
+    if (userIndex === -1) userIndex = users.findIndex(u => u.userId == userId);
+    if (userIndex === -1) userIndex = users.findIndex(u => String(u.userId) === String(userId));
     if (userIndex === -1) return { success: false, message: "❌ Foydalanuvchi topilmadi!" };
     
     const user = users[userIndex];
     if (user.isAdmin) return { success: false, message: "❌ Adminni o'chirib bo'lmaydi!" };
     
-    // Avtomobili yo'q foydalanuvchilarni o'chirish
     const userDiagnostics = diagnostics.filter(d => d.userId === userId || d.userId == userId);
     diagnostics = diagnostics.filter(d => d.userId !== userId && d.userId != userId);
     saveDiagnostics();
@@ -1323,6 +1314,31 @@ bot.onText(/\/listusers/, async (msg) => {
     await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
 });
 
+bot.onText(/\/cleanusers/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    if (!isAdmin(userId)) return;
+    
+    const usersWithoutCars = users.filter(u => !u.isAdmin && (!u.cars || u.cars.length === 0));
+    
+    if (usersWithoutCars.length === 0) {
+        await bot.sendMessage(chatId, "✅ *Avtomobili bo'lmagan foydalanuvchilar yo'q!*", { parse_mode: "Markdown" });
+        return;
+    }
+    
+    let deleted = 0;
+    let msgText = "🗑️ *O'CHIRILGANLAR*\n━━━━━━━━━━━━━━━━━━\n\n";
+    
+    for (const u of usersWithoutCars) {
+        msgText += `👤 ${u.fullName || "Ismsiz"}\n📞 ${u.phone}\n🆔 ID: ${u.userId}\n━━━━━━━━━━━━━━━━━━\n`;
+        const result = deleteUser(u.userId);
+        if (result.success) deleted++;
+    }
+    
+    msgText += `\n✅ *${deleted} ta foydalanuvchi o'chirildi!*`;
+    await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
+});
+
 // -------------------- /start KOMANDASI --------------------
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
@@ -1481,8 +1497,7 @@ bot.onText(/\/profile/, async (msg) => {
     
     const carsList = user.cars.map(c => "🚗 " + c.carNumber + " (" + c.totalDiagnostics + " ta diagnostika)").join("\n");
     await sendReminder(chatId);
-    await bot.sendMessage(chatId, "📊 *MENGING SAHIFAM*\n\n👤 *Ism:* " + (user.fullName || "Kiritilmagan") + "\n📞 *Telefon:* " + user.phone + "\n🚗 *Avtomobillar:* " + user.cars.length + "/" + MAX_CARS_PER_USER + "\n\n" + carsList + "\n\n🎁 *Umumiy bonuslar:* " + (user.totalBonusCount || 0) + "\n🎉 *Bepul diagnostika:* " + (user.totalFreeDiagnostics || 0) + " ta\n📊 *Jami diagnostika:* " + (user.totalDiagnosticsAll || 0) + " ta\n📌 *Versiya:* `V" + currentVersion + "`", { parse_mode: "Markdown" });
-});
+   await bot.sendMessage(chatId, "📊 *MENGING SAHIFAM*\n\n👤 *Ism:* " + (user.fullName || "Kiritilmagan") + "\n📞 *Telefon:* " + user.phone + "\n🚗 *Avtomobillar:* " + user.cars.length + "/" + MAX_CARS_PER_USER + "\n\n" + carsList + "\n\n🎁 *Umumiy bonuslar:* " + (user.totalBonusCount || 0) + "\n🎉 *Bepul diagnostika:* " + (user.totalFreeDiagnostics || 0) + " ta\n📊 *Jami diagnostika:* " + (user.totalDiagnosticsAll || 0) + " ta", { parse_mode: "Markdown" });
 
 bot.onText(/\/my_cars/, async (msg) => {
     const chatId = msg.chat.id;
@@ -2097,61 +2112,57 @@ bot.on("message", async (msg) => {
             }
         }
         // FOYDALANUVCHILARNI BOSHQARISH (TUZATILGAN)
-        else if (text === "🚫 Foyd. boshqarish") {
-            const activeUsers = getActiveUsers();
-            const blockedUsers = getBlockedUsers();
-            // Barcha foydalanuvchilarni ko'rsatish (ID bilan)
-            const allUsers = [...activeUsers, ...blockedUsers];
-            
-            if (allUsers.length === 0) {
-                await bot.sendMessage(chatId, "📭 Hech qanday foydalanuvchi yo'q", { parse_mode: "Markdown" });
-                await sendMainMenu(chatId, true, deviceType);
-                return;
-            }
-            
-            const totalPages = Math.ceil(allUsers.length / USERS_PER_PAGE);
-            const start = userManagePage * USERS_PER_PAGE;
-            const end = start + USERS_PER_PAGE;
-            const pageUsers = allUsers.slice(start, end);
-            
-            let msg = `👥 *FOYDALANUVCHILARNI BOSHQARISH*\n\n🟢 Faol: ${activeUsers.length}\n🔴 Bloklangan: ${blockedUsers.length}\n📄 Sahifa ${userManagePage + 1}/${totalPages}\n━━━━━━━━━━━━━━━━━━\n\n`;
-            
-            const keyboard = [];
-            let row = [];
-            
-            for (let i = 0; i < pageUsers.length; i++) {
-                const userObj = pageUsers[i];
-                const num = start + i + 1;
-                const status = userObj.isBlocked ? "🔴" : "🟢";
-                const carNumber = userObj.cars.length > 0 ? userObj.cars[0].carNumber : "❌ Avto yo'q";
-                const displayText = `${status} ${num}. ${carNumber}`;
-                
-                row.push({ text: displayText.substring(0, 20), callback_data: `manage_user_${userObj.userId}` });
-                
-                if (row.length === 2) {
-                    keyboard.push([...row]);
-                    row = [];
-                }
-            }
-            if (row.length > 0) {
-                keyboard.push([...row]);
-            }
-            
-            const navButtons = [];
-            if (userManagePage > 0) {
-                navButtons.push({ text: "◀️ Oldingi", callback_data: "user_page_prev" });
-            }
-            if (end < allUsers.length) {
-                navButtons.push({ text: "Keyingi ▶️", callback_data: "user_page_next" });
-            }
-            if (navButtons.length > 0) {
-                keyboard.push(navButtons);
-            }
-            
-            keyboard.push([{ text: "🔙 Ortga", callback_data: "admin_manage_users_back" }]);
-            
-            await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
+else if (text === "🚫 Foyd. boshqarish") {
+    const activeUsers = getActiveUsers();
+    const blockedUsers = getBlockedUsers();
+    const allUsers = [...activeUsers, ...blockedUsers].filter(u => u.cars && u.cars.length > 0);
+    
+    if (allUsers.length === 0) {
+        await bot.sendMessage(chatId, "📭 *Avtomobili bo'lgan foydalanuvchilar yo'q!*", { parse_mode: "Markdown" });
+        await sendMainMenu(chatId, true, deviceType);
+        return;
+    }
+    
+    const totalPages = Math.ceil(allUsers.length / USERS_PER_PAGE);
+    if (userManagePage >= totalPages) userManagePage = 0;
+    
+    const start = userManagePage * USERS_PER_PAGE;
+    const end = start + USERS_PER_PAGE;
+    const pageUsers = allUsers.slice(start, end);
+    
+    let msg = `👥 *FOYDALANUVCHILARNI BOSHQARISH*\n`;
+    msg += `🚗 *Avtomobili bo'lganlar:* ${allUsers.length} ta\n`;
+    msg += `📄 Sahifa ${userManagePage + 1}/${totalPages}\n`;
+    msg += "━━━━━━━━━━━━━━━━━━\n\n";
+    
+    const keyboard = [];
+    let row = [];
+    
+    for (let i = 0; i < pageUsers.length; i++) {
+        const userObj = pageUsers[i];
+        const num = start + i + 1;
+        const status = userObj.isBlocked ? "🔴" : "🟢";
+        const carNumber = userObj.cars[0].carNumber;
+        const displayText = `${status} ${num}. ${carNumber}`;
+        
+        row.push({ text: displayText.substring(0, 20), callback_data: `manage_user_${userObj.userId}` });
+        
+        if (row.length === 2) {
+            keyboard.push([...row]);
+            row = [];
         }
+    }
+    if (row.length > 0) keyboard.push([...row]);
+    
+    const navButtons = [];
+    if (userManagePage > 0) navButtons.push({ text: "◀️ Oldingi", callback_data: "user_page_prev" });
+    if (end < allUsers.length) navButtons.push({ text: "Keyingi ▶️", callback_data: "user_page_next" });
+    if (navButtons.length > 0) keyboard.push(navButtons);
+    
+    keyboard.push([{ text: "🔙 Ortga", callback_data: "admin_manage_users_back" }]);
+    
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
+}
         // XAVFSIZLIK
         else if (text === "🔐 Xavfsizlik") {
             if (!isSuperAdmin(userId) && !canEditCode(userId)) {
@@ -2372,30 +2383,17 @@ bot.on("callback_query", async (query) => {
         await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 " + MAX_CARS_PER_USER + " tagacha avtomobil\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Versiya: `V" + currentVersion + "`\n\n© " + BOT_OWNER, { parse_mode: "Markdown" });
         await sendMainMenu(chatId, false, deviceType);
     }
-    else if (data === "user_version_info") {
-        const versionInfo = getVersionInfo();
-        let msg = "📌 *VERSIYA MA'LUMOTLARI*\n\n";
-        msg += `🔹 Sizning versiyangiz: \`V${currentVersion}\`\n`;
-        msg += `🔹 Yangi bot linki: ${NEW_BOT_LINK}\n\n`;
-        
-        if (versionHistory.length > 0) {
-            msg += "📜 *SO'NGI YANGILANISHLAR*\n━━━━━━━━━━━━━━━━━━\n\n";
-            versionHistory.slice(0, 3).forEach(v => {
-                msg += `📌 Versiya: \`V${v.version}\`\n`;
-                msg += `📅 Sana: ${formatTashkentDate(v.date)}\n`;
-                msg += `📝 ${v.changes.substring(0, 50)}${v.changes.length > 50 ? "..." : ""}\n`;
-                msg += "━━━━━━━━━━━━━━━━━━\n";
-            });
-        }
-        
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: "🚀 Yangi botga o'tish", url: NEW_BOT_LINK }],
-                [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
-            ]
-        };
-        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: keyboard });
-    }
+else if (data === "user_version_info") {
+    let msg = "📌 *BOT VERSIYASI*\n\n";
+    msg += `🔹 Joriy versiya: \`V${currentVersion}\``;
+    
+    const keyboard = {
+        inline_keyboard: [
+            [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+        ]
+    };
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: keyboard });
+}
     
     // Admin callback'lari
     else if (data === "admin_update_version") {
