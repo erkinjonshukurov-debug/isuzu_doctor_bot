@@ -2938,3 +2938,4 @@ console.log("🔑 Litsenziya ID: " + uniqueInstallId);
 console.log("© Muallif: " + BOT_OWNER);
 console.log("=".repeat(60));
 console.log("✅ Bot ishlashga tayyor!");
+});
