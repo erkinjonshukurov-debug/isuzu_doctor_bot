@@ -12,6 +12,7 @@ const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
 // ======================== VERSIYA TIZIMI ========================
 let currentVersion = "2.1";
 
+// VERSIYANI OSHIRISH - FAQAT KOD O'ZGARGANDA!
 function incrementVersion() {
     const parts = currentVersion.split('.');
     const major = parts[0];
@@ -139,6 +140,7 @@ function saveVersionHistory() {
     fs.writeFileSync(VERSION_HISTORY_FILE, JSON.stringify(versionHistory, null, 2));
 }
 
+// VERSIYA TARIXIGA YOZISH - VERSIYA O'ZGARMAYDI!
 function addVersionRecord(version, changes, adminId) {
     const record = {
         id: Date.now(),
@@ -152,8 +154,17 @@ function addVersionRecord(version, changes, adminId) {
         versionHistory = versionHistory.slice(0, 50);
     }
     saveVersionHistory();
-    addSecurityLog("VERSION_UPDATE", adminId, `Yangi versiya: ${version}`);
+    addSecurityLog("VERSION_RECORD", adminId, `Yangi yozuv: ${changes}`);
     return record;
+}
+
+// KOD O'ZGARGANDA VERSIYANI YANGILASH (ADMIN QO'LDAN)
+function updateBotVersion(newVersion, changes, adminId) {
+    currentVersion = newVersion;
+    saveVersion();
+    addVersionRecord(newVersion, changes, adminId);
+    console.log(`✅ Bot versiyasi yangilandi: V${newVersion}`);
+    return true;
 }
 
 // -------------------- ESLATMA MATNI --------------------
@@ -276,7 +287,7 @@ function addVideo(videoFileId, title, description, adminId) {
     videoList.unshift(newVideo);
     saveVideos();
     addSecurityLog("VIDEO_UPLOADED", adminId, "Video yuklandi: " + title);
-    incrementVersion();
+    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Video yuklandi: " + title, adminId);
     return newVideo;
 }
@@ -306,6 +317,7 @@ function updateVideoLikes(videoId, userId) {
 function getActiveVideos() {
     return videoList.filter(v => v.isActive);
 }
+
 // -------------------- PAPKALARNI YARATISH --------------------
 function ensureVolumeDir() {
     if (!fs.existsSync(VOLUME_PATH)) {
@@ -418,15 +430,7 @@ function saveVersion() {
     fs.writeFileSync(VERSION_FILE, JSON.stringify(versionData, null, 2));
 }
 
-function updateBotVersion(newVersion, changes, adminId) {
-    currentVersion = newVersion;
-    saveVersion();
-    addVersionRecord(newVersion, changes, adminId);
-    console.log(`✅ Bot versiyasi yangilandi: V${newVersion}`);
-    return true;
-}
-
-// -------------------- BACKUP FUNKSIYALARI --------------------
+// -------------------- BACKUP FUNKSIYALARI (VERSIYA O'ZGARMAYDI) --------------------
 function createBackup() {
     ensureVolumeDir();
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
@@ -451,7 +455,8 @@ function createBackup() {
         backups.shift();
     }
     console.log("✅ Backup yaratildi: " + timestamp);
-    incrementVersion();
+    
+    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Backup yaratildi", SUPER_ADMIN_ID);
     return true;
 }
@@ -491,7 +496,7 @@ function restoreBackup(backupName) {
     }
     
     console.log("✅ Database tiklandi: " + backupName);
-    incrementVersion();
+    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Database tiklandi: " + backupName, SUPER_ADMIN_ID);
     return true;
 }
@@ -549,7 +554,7 @@ function grantEditPermission(adminId, targetUserId) {
     adminSettings.allowedEditors.push(targetUserId);
     saveAdminSettings();
     addSecurityLog("GRANT_EDIT_PERMISSION", adminId, "Admin " + targetUserId + " ga ruxsat berildi");
-    incrementVersion();
+    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Admin qo'shildi: " + targetUserId, adminId);
     
     return { success: true, message: "Ruxsat muvaffaqiyatli berildi!" };
@@ -568,11 +573,12 @@ function revokeEditPermission(adminId, targetUserId) {
     adminSettings.allowedEditors.splice(index, 1);
     saveAdminSettings();
     addSecurityLog("REVOKE_EDIT_PERMISSION", adminId, "Admin " + targetUserId + " dan ruxsat olindi");
-    incrementVersion();
+    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Admin o'chirildi: " + targetUserId, adminId);
     
     return { success: true, message: "Ruxsat muvaffaqiyatli olib qo'yildi!" };
 }
+
 // -------------------- FOYDALANUVCHI FUNKSIYALARI --------------------
 function getUserByPhone(phone) {
     return users.find(u => u.phone === phone);
@@ -603,7 +609,7 @@ function deleteUser(userId) {
     
     users.splice(userIndex, 1);
     saveUsers();
-    incrementVersion();
+    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Foydalanuvchi o'chirildi: " + (user.fullName || user.phone), SUPER_ADMIN_ID);
     
     return { 
@@ -620,7 +626,7 @@ function blockUser(userId) {
     
     user.isBlocked = true;
     saveUsers();
-    incrementVersion();
+    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Foydalanuvchi bloklandi: " + (user.fullName || user.phone), SUPER_ADMIN_ID);
     return { success: true, message: "✅ Foydalanuvchi bloklandi: " + (user.fullName || user.phone) };
 }
@@ -631,7 +637,7 @@ function unblockUser(userId) {
     
     user.isBlocked = false;
     saveUsers();
-    incrementVersion();
+    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Foydalanuvchi blokdan ochildi: " + (user.fullName || user.phone), SUPER_ADMIN_ID);
     return { success: true, message: "✅ Foydalanuvchi blokdan ochildi: " + (user.fullName || user.phone) };
 }
@@ -671,7 +677,7 @@ function addNewUser(userId, phoneNumber, carNumber, firstName, lastName, usernam
     };
     users.push(newUser);
     saveUsers();
-    incrementVersion();
+    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Yangi foydalanuvchi qo'shildi: " + phoneNumber, userId);
     return newUser;
 }
@@ -708,7 +714,7 @@ function addCarToUser(phoneNumber, carNumber, userInfo = {}) {
     });
     
     saveUsers();
-    incrementVersion();
+    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Yangi avtomobil qo'shildi: " + carNumber, user.userId);
     return { success: true, message: "Yangi avtomobil qo'shildi!", carsCount: user.cars.length };
 }
@@ -765,7 +771,7 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
     }
     
     saveUsers();
-    incrementVersion();
+    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Diagnostika qo'shildi: " + carNumber, user.userId);
     
     return {
@@ -937,6 +943,7 @@ function getAvailableYears() {
     });
     return Array.from(years).sort((a, b) => b - a);
 }
+
 // -------------------- HISOBOT YARATISH --------------------
 async function generateDiagnosticsReport(diagnosticsList) {
     return new Promise((resolve, reject) => {
@@ -1004,10 +1011,11 @@ async function sendNotificationToAllUsers(message, keyboard = null) {
         try {
             await bot.sendMessage(user.userId, message, {
                 parse_mode: "Markdown",
-                reply_markup: keyboard
+                reply_markup: keyboard,
+                disable_notification: false
             });
             successCount++;
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 100));
         } catch (error) {
             failCount++;
             console.error(`Xabar yuborilmadi (${user.userId}):`, error.message);
@@ -1024,6 +1032,7 @@ async function sendReminder(chatId) {
         console.error("Eslatma yuborishda xatolik:", error);
     }
 }
+
 // -------------------- INLINE KEYBOARD (FOYDALANUVCHI UCHUN) --------------------
 function getCompactInlineKeyboard() {
     return {
@@ -1099,12 +1108,12 @@ function getUserPaymentKeyboard() {
 async function sendMainMenu(chatId, isAdminUser = false, deviceType = "web") {
     try {
         if (isAdminUser) {
-            await bot.sendMessage(chatId, "👑 *Admin paneli*\n\n📌 Bot versiyasi: `V" + currentVersion + "`\n🔑 Litsenziya ID: `" + uniqueInstallId + "`\n\n© " + BOT_OWNER, {
+            await bot.sendMessage(chatId, "👑 *Admin paneli*\n\n📌 Bot versiyasi: `V" + currentVersion + "`\n🔑 Litsenziya ID: `" + uniqueInstallId + "`\n📸 Instagram: " + INSTAGRAM_LINK + "\n\n© " + BOT_OWNER, {
                 parse_mode: "Markdown",
                 ...getAdminReplyKeyboard()
             });
         } else {
-            await bot.sendMessage(chatId, "🏠 *Asosiy menyu*\n\n📌 Sizning versiyangiz: `V" + currentVersion + "`\n🚗 Isuzu Doctor bot", {
+            await bot.sendMessage(chatId, "🏠 *Asosiy menyu*\n\n📌 Sizning versiyangiz: `V" + currentVersion + "`\n📸 Instagram: " + INSTAGRAM_LINK + "\n🚗 Isuzu Doctor bot", {
                 parse_mode: "Markdown",
                 ...getCompactInlineKeyboard()
             });
@@ -1250,6 +1259,7 @@ function clearUserSession(userId) {
 }
 
 let userManagePage = 0;
+
 // -------------------- BOTNI YARATISH --------------------
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 bot.deleteWebHook().catch(e => console.log("Webhook xatolik:", e.message));
@@ -1291,7 +1301,7 @@ bot.onText(/\/start/, async (msg) => {
             }
             
             const carsCount = existingUser.cars.length;
-            const welcomeText = "👋 *Xush kelibsiz, " + (existingUser.fullName || firstName || "hurmatli mijoz") + "!*\n\n📞 Telefon: " + existingUser.phone + "\n🚗 Avtomobillar: " + carsCount + " ta\n🎁 Bonus: " + (existingUser.totalBonusCount || 0) + "\n🎉 Bepul: " + (existingUser.totalFreeDiagnostics || 0) + " ta\n📊 Diagnostika: " + (existingUser.totalDiagnosticsAll || 0) + " ta\n📌 Bot versiyasi: `V" + currentVersion + "`";
+            const welcomeText = "👋 *Xush kelibsiz, " + (existingUser.fullName || firstName || "hurmatli mijoz") + "!*\n\n📞 Telefon: " + existingUser.phone + "\n🚗 Avtomobillar: " + carsCount + " ta\n🎁 Bonus: " + (existingUser.totalBonusCount || 0) + "\n🎉 Bepul: " + (existingUser.totalFreeDiagnostics || 0) + " ta\n📊 Diagnostika: " + (existingUser.totalDiagnosticsAll || 0) + " ta\n📌 Bot versiyasi: `V" + currentVersion + "`\n📸 Instagram: " + INSTAGRAM_LINK;
             await bot.sendMessage(chatId, welcomeText, { parse_mode: "Markdown" });
             await sendMainMenu(chatId, existingUser.isAdmin, deviceType);
         } else {
@@ -1300,7 +1310,7 @@ bot.onText(/\/start/, async (msg) => {
             session.data.lastName = lastName;
             session.data.username = username;
             
-            await bot.sendMessage(chatId, "🚗 *ISUZU DOCTOR* tizimiga xush kelibsiz! (Versiya V" + currentVersion + ")\n\n© " + BOT_OWNER + "\n\n📱 Iltimos, telefon raqamingizni yuboring:", {
+            await bot.sendMessage(chatId, "🚗 *ISUZU DOCTOR* tizimiga xush kelibsiz! (Versiya V" + currentVersion + ")\n📸 Instagram: " + INSTAGRAM_LINK + "\n\n© " + BOT_OWNER + "\n\n📱 Iltimos, telefon raqamingizni yuboring:", {
                 parse_mode: "Markdown",
                 ...getPhoneKeyboard()
             });
@@ -1366,7 +1376,7 @@ bot.on("contact", async (msg) => {
         
         try {
             await sendReminder(chatId);
-            await bot.sendMessage(chatId, "👑 *Siz ADMIN sifatida tizimga kirdingiz!*\n\n📞 Telefon: " + phoneNumber + "\n📌 Versiya: V" + currentVersion, { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "👑 *Siz ADMIN sifatida tizimga kirdingiz!*\n\n📞 Telefon: " + phoneNumber + "\n📌 Versiya: V" + currentVersion + "\n📸 Instagram: " + INSTAGRAM_LINK, { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, getUserDevice(userId));
         } catch (error) {
             console.error("Admin xabar xatolik:", error);
@@ -1400,7 +1410,7 @@ bot.on("contact", async (msg) => {
     }
 });
 
-// -------------------- ADMIN MATNLI BUYRUQLAR (Telefon yoki avto raqam bo'yicha o'chirish) --------------------
+// -------------------- ADMIN MATNLI BUYRUQLAR --------------------
 bot.onText(/\/deleteuser (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1613,6 +1623,7 @@ bot.onText(/\/close/, async (msg) => {
     clearUserSession(userId);
     await sendMainMenu(chatId, isAdmin(userId), getUserDevice(userId));
 });
+
 // -------------------- ADMIN MATNLI BUYRUQLAR --------------------
 bot.onText(/\/statistika/, async (msg) => {
     const chatId = msg.chat.id;
@@ -1642,6 +1653,7 @@ bot.onText(/\/add_diagnostic/, async (msg) => {
     session.step = "admin_add_diagnostic";
     await bot.sendMessage(chatId, "🔧 *Diagnostika qo'shish*\n\n🚗 Avtomobil raqamini kiriting:", { parse_mode: "Markdown", ...removeKeyboard() });
 });
+
 // -------------------- ASOSIY MESSAGE HANDLER --------------------
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
@@ -1699,7 +1711,7 @@ bot.on("message", async (msg) => {
         session.data.description = text || "";
         addVideo(session.data.videoFileId, session.data.title, session.data.description, userId);
         
-        await bot.sendMessage(chatId, "✅ *Video muvaffaqiyatli yuklandi!*\n\n📹 *Nomi:* " + session.data.title + "\n📌 Versiya yangilandi: V" + currentVersion, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, "✅ *Video muvaffaqiyatli yuklandi!*\n\n📹 *Nomi:* " + session.data.title + "\n", { parse_mode: "Markdown" });
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, deviceType);
@@ -1733,14 +1745,14 @@ bot.on("message", async (msg) => {
         
         const result = await sendNotificationToAllUsers(messageText, keyboard);
         
-        await bot.sendMessage(chatId, `✅ *Xabar yuborildi!*\n\n✅ Yuborildi: ${result.success} ta foydalanuvchiga\n❌ Yuborilmadi: ${result.fail} ta\n📌 Versiya yangilandi: V${currentVersion}`, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, `✅ *Xabar yuborildi!*\n\n✅ Yuborildi: ${result.success} ta foydalanuvchiga\n❌ Yuborilmadi: ${result.fail} ta`, { parse_mode: "Markdown" });
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, deviceType);
         return;
     }
     
-    // Admin versiya yangilash
+    // Admin versiya yangilash (KOD O'ZGARGANDA!)
     if (session.step === "admin_update_version") {
         if (!isAdmin(userId)) {
             clearUserSession(userId);
@@ -1758,7 +1770,7 @@ bot.on("message", async (msg) => {
         
         session.data.newVersion = newVersion;
         session.step = "admin_version_changes";
-        await bot.sendMessage(chatId, "✅ *Yangi versiya:* V" + newVersion + "\n\n📝 Endi o'zgarishlar tavsifini kiriting:", { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, "✅ *Yangi versiya:* V" + newVersion + "\n\n📝 Endi o'zgarishlar tavsifini kiriting:\n\nMasalan: 'Instagram link yangilandi' yoki 'Yangi funksiya qo'shildi'", { parse_mode: "Markdown" });
         return;
     }
     
@@ -1777,9 +1789,10 @@ bot.on("message", async (msg) => {
             return;
         }
         
+        // ✅ VERSIYA FAQAT SHU YERDA O'ZGARADI (kod o'zgarganda)
         updateBotVersion(session.data.newVersion, changes, userId);
         
-        await bot.sendMessage(chatId, `✅ *Versiya yangilandi!*\n\n📌 Yangi versiya: \`V${session.data.newVersion}\`\n📝 O'zgarishlar: ${changes}`, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, `✅ *Versiya yangilandi!*\n\n📌 Yangi versiya: \`V${session.data.newVersion}\`\n📝 O'zgarishlar: ${changes}\n\n⚠️ DIQQAT: Bu versiya faqat kod o'zgarganida yangilanadi!`, { parse_mode: "Markdown" });
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, deviceType);
@@ -1843,7 +1856,7 @@ bot.on("message", async (msg) => {
         });
         
         if (result.success) {
-            await bot.sendMessage(chatId, "✅ *Yangi avtomobil qo'shildi!*\n\n🚗 " + carNumber + "\n📌 Versiya: V" + currentVersion, { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "✅ *Yangi avtomobil qo'shildi!*\n\n🚗 " + carNumber, { parse_mode: "Markdown" });
         } else {
             await bot.sendMessage(chatId, "❌ " + result.message, { parse_mode: "Markdown" });
         }
@@ -1915,7 +1928,7 @@ bot.on("message", async (msg) => {
             session.data.additionalNotes
         );
         
-        let adminResponse = "🔧 *DIAGNOSTIKA QO'SHILDI*\n\n👤 " + (session.data.targetUser.fullName || "Ismsiz") + "\n🚗 " + result.carNumber + "\n💰 " + result.price.toLocaleString() + " so'm\n\n" + result.bonusMessage + "\n📌 Versiya yangilandi: V" + currentVersion;
+        let adminResponse = "🔧 *DIAGNOSTIKA QO'SHILDI*\n\n👤 " + (session.data.targetUser.fullName || "Ismsiz") + "\n🚗 " + result.carNumber + "\n💰 " + result.price.toLocaleString() + " so'm\n\n" + result.bonusMessage;
         
         await bot.sendMessage(chatId, adminResponse, { parse_mode: "Markdown" });
         
@@ -1931,7 +1944,6 @@ bot.on("message", async (msg) => {
         
         userMsg += "💰 *Narx:* " + (result.isFree ? "BEPUL" : result.price.toLocaleString() + " so'm") + "\n\n";
         userMsg += result.bonusMessage;
-        userMsg += "\n📌 Bot versiyasi: V" + currentVersion;
         
         bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: "Markdown" }).catch(() => {});
         
@@ -1956,7 +1968,7 @@ bot.on("message", async (msg) => {
         }
         
         const result = grantEditPermission(userId, targetAdminId);
-        await bot.sendMessage(chatId, result.message + "\n📌 Versiya yangilandi: V" + currentVersion, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, deviceType);
@@ -2075,7 +2087,7 @@ bot.on("message", async (msg) => {
         else if (text === "💾 Backup") {
             await bot.sendMessage(chatId, "💾 *Backup yaratilmoqda...*", { parse_mode: "Markdown" });
             createBackup();
-            await bot.sendMessage(chatId, "✅ *Backup yaratildi!*\n📌 Versiya yangilandi: V" + currentVersion, { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "✅ *Backup yaratildi!*", { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, deviceType);
         }
         else if (text === "🔄 Tiklash") {
@@ -2163,18 +2175,18 @@ bot.on("message", async (msg) => {
             msg += `🔹 Yangi bot linki: ${NEW_BOT_LINK}\n\n`;
             
             if (versionHistory.length > 0) {
-                msg += "📜 *YANGILANISHLAR TARIXI*\n━━━━━━━━━━━━━━━━━━\n\n";
-                versionHistory.slice(0, 5).forEach(v => {
+                msg += "📜 *O'ZGARISHLAR TARIXI*\n━━━━━━━━━━━━━━━━━━\n\n";
+                versionHistory.slice(0, 10).forEach(v => {
                     msg += `📌 Versiya: \`V${v.version}\`\n`;
                     msg += `📅 Sana: ${formatTashkentDate(v.date)}\n`;
-                    msg += `📝 O'zgarishlar: ${v.changes.substring(0, 50)}${v.changes.length > 50 ? "..." : ""}\n`;
+                    msg += `📝 O'zgarish: ${v.changes.substring(0, 50)}${v.changes.length > 50 ? "..." : ""}\n`;
                     msg += "━━━━━━━━━━━━━━━━━━\n";
                 });
             }
             
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: "🔄 Versiyani yangilash", callback_data: "admin_update_version" }],
+                    [{ text: "🔄 Versiyani yangilash (KOD O'ZGARGANDA)", callback_data: "admin_update_version" }],
                     [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
                 ]
             };
@@ -2204,6 +2216,7 @@ bot.on("message", async (msg) => {
         await sendMainMenu(chatId, false, deviceType);
     }
 });
+
 // -------------------- CALLBACK QUERY HANDLER --------------------
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
@@ -2358,7 +2371,8 @@ bot.on("callback_query", async (query) => {
     }
     else if (data === "user_version_info") {
         let msg = "📌 *BOT VERSIYASI*\n\n";
-        msg += `🔹 Joriy versiya: \`V${currentVersion}\``;
+        msg += `🔹 Joriy versiya: \`V${currentVersion}\`\n`;
+        msg += `🔹 Bu versiya faqat KOD O'ZGARGANDA yangilanadi!`;
         const keyboard = {
             inline_keyboard: [[{ text: "🔙 Ortga", callback_data: "back_to_main" }]]
         };
@@ -2373,7 +2387,7 @@ bot.on("callback_query", async (query) => {
         }
         const session = getUserSession(userId);
         session.step = "admin_update_version";
-        await bot.sendMessage(chatId, "🔄 *VERSIYANI YANGILASH*\n\nYangi versiya raqamini kiriting (masalan: 2.2):\n\n❌ Bekor qilish uchun /cancel yozing.", { parse_mode: "Markdown", reply_markup: { remove_keyboard: true } });
+        await bot.sendMessage(chatId, "🔄 *VERSIYANI YANGILASH (KOD O'ZGARGANDA)*\n\nYangi versiya raqamini kiriting (masalan: 2.2):\n\n⚠️ DIQQAT: Bu amal faqat kodga o'zgartirish kiritganingizda ishlatiladi!\n\n❌ Bekor qilish uchun /cancel yozing.", { parse_mode: "Markdown", reply_markup: { remove_keyboard: true } });
     }
     else if (data === "today_diagnostics") {
         const diags = getTodayDiagnostics();
@@ -2518,7 +2532,6 @@ bot.on("callback_query", async (query) => {
     else if (data === "user_page_prev") {
         if (userManagePage > 0) {
             userManagePage--;
-            // Refresh the users list
             const activeUsers = getActiveUsers();
             const blockedUsers = getBlockedUsers();
             const allUsers = [...activeUsers, ...blockedUsers].filter(u => u.cars && u.cars.length > 0);
@@ -2688,7 +2701,7 @@ bot.on("callback_query", async (query) => {
         }
         const targetAdminId = parseInt(data.split("_")[2]);
         const result = revokeEditPermission(userId, targetAdminId);
-        await bot.sendMessage(chatId, result.message + "\n📌 Versiya yangilandi: V" + currentVersion, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
         await sendMainMenu(chatId, true, deviceType);
     }
     else if (data.startsWith("restore_")) {
@@ -2698,7 +2711,7 @@ bot.on("callback_query", async (query) => {
             loadData();
             loadVideos();
             loadVersionHistory();
-            await bot.sendMessage(chatId, "✅ *Database tiklandi!*\n📌 Versiya yangilandi: V" + currentVersion, { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "✅ *Database tiklandi!*", { parse_mode: "Markdown" });
         } else {
             await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
         }
@@ -2746,13 +2759,13 @@ bot.on("callback_query", async (query) => {
     else if (data.startsWith("block_user_")) {
         const targetUserId = parseInt(data.split("_")[2]);
         const result = blockUser(targetUserId);
-        await bot.sendMessage(chatId, result.message + "\n📌 Versiya yangilandi: V" + currentVersion, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
         await sendMainMenu(chatId, true, deviceType);
     }
     else if (data.startsWith("unblock_user_")) {
         const targetUserId = parseInt(data.split("_")[2]);
         const result = unblockUser(targetUserId);
-        await bot.sendMessage(chatId, result.message + "\n📌 Versiya yangilandi: V" + currentVersion, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
         await sendMainMenu(chatId, true, deviceType);
     }
     else if (data.startsWith("delete_user_")) {
@@ -2846,6 +2859,7 @@ console.log("=".repeat(60));
 console.log("🚗 ISUZU DOCTOR BOT ISHGA TUSHDI");
 console.log("=".repeat(60));
 console.log("📌 Versiya: V" + currentVersion);
+console.log("⚠️ Versiya FAQAT kod o'zgarganda yangilanadi!");
 console.log("👑 Adminlar: " + ADMIN_IDS.join(", "));
 console.log("👥 Foydalanuvchilar: " + users.filter(u => !u.isAdmin).length);
 console.log("🔧 Diagnostikalar: " + diagnostics.length);
