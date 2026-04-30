@@ -33,6 +33,7 @@ function getVersionInfo() {
 // ======================== LINKLAR ========================
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
 const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
+const INSTAGRAM_LINK = "https://www.instagram.com/isuzudoctor.979247888;
 const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy";
 
 // -------------------- VAQT ZONASI (TOSHKENT UTC+5) --------------------
