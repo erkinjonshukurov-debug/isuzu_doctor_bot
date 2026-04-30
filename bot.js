@@ -287,7 +287,6 @@ function addVideo(videoFileId, title, description, adminId) {
     videoList.unshift(newVideo);
     saveVideos();
     addSecurityLog("VIDEO_UPLOADED", adminId, "Video yuklandi: " + title);
-    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Video yuklandi: " + title, adminId);
     return newVideo;
 }
@@ -456,7 +455,6 @@ function createBackup() {
     }
     console.log("✅ Backup yaratildi: " + timestamp);
     
-    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Backup yaratildi", SUPER_ADMIN_ID);
     return true;
 }
@@ -496,7 +494,6 @@ function restoreBackup(backupName) {
     }
     
     console.log("✅ Database tiklandi: " + backupName);
-    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Database tiklandi: " + backupName, SUPER_ADMIN_ID);
     return true;
 }
@@ -554,7 +551,6 @@ function grantEditPermission(adminId, targetUserId) {
     adminSettings.allowedEditors.push(targetUserId);
     saveAdminSettings();
     addSecurityLog("GRANT_EDIT_PERMISSION", adminId, "Admin " + targetUserId + " ga ruxsat berildi");
-    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Admin qo'shildi: " + targetUserId, adminId);
     
     return { success: true, message: "Ruxsat muvaffaqiyatli berildi!" };
@@ -573,7 +569,6 @@ function revokeEditPermission(adminId, targetUserId) {
     adminSettings.allowedEditors.splice(index, 1);
     saveAdminSettings();
     addSecurityLog("REVOKE_EDIT_PERMISSION", adminId, "Admin " + targetUserId + " dan ruxsat olindi");
-    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Admin o'chirildi: " + targetUserId, adminId);
     
     return { success: true, message: "Ruxsat muvaffaqiyatli olib qo'yildi!" };
@@ -609,7 +604,6 @@ function deleteUser(userId) {
     
     users.splice(userIndex, 1);
     saveUsers();
-    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Foydalanuvchi o'chirildi: " + (user.fullName || user.phone), SUPER_ADMIN_ID);
     
     return { 
@@ -626,7 +620,6 @@ function blockUser(userId) {
     
     user.isBlocked = true;
     saveUsers();
-    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Foydalanuvchi bloklandi: " + (user.fullName || user.phone), SUPER_ADMIN_ID);
     return { success: true, message: "✅ Foydalanuvchi bloklandi: " + (user.fullName || user.phone) };
 }
@@ -637,7 +630,6 @@ function unblockUser(userId) {
     
     user.isBlocked = false;
     saveUsers();
-    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Foydalanuvchi blokdan ochildi: " + (user.fullName || user.phone), SUPER_ADMIN_ID);
     return { success: true, message: "✅ Foydalanuvchi blokdan ochildi: " + (user.fullName || user.phone) };
 }
@@ -677,7 +669,6 @@ function addNewUser(userId, phoneNumber, carNumber, firstName, lastName, usernam
     };
     users.push(newUser);
     saveUsers();
-    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Yangi foydalanuvchi qo'shildi: " + phoneNumber, userId);
     return newUser;
 }
@@ -714,7 +705,6 @@ function addCarToUser(phoneNumber, carNumber, userInfo = {}) {
     });
     
     saveUsers();
-    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Yangi avtomobil qo'shildi: " + carNumber, user.userId);
     return { success: true, message: "Yangi avtomobil qo'shildi!", carsCount: user.cars.length };
 }
@@ -771,7 +761,6 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
     }
     
     saveUsers();
-    // ❌ incrementVersion() O'CHIRILDI - versiya o'zgarmaydi
     addVersionRecord(currentVersion, "Diagnostika qo'shildi: " + carNumber, user.userId);
     
     return {
@@ -1001,7 +990,7 @@ async function generateDiagnosticsReport(diagnosticsList) {
     });
 }
 
-// -------------------- XABAR YUBORISH --------------------
+// -------------------- XABAR YUBORISH (TO'G'RILANGAN) --------------------
 async function sendNotificationToAllUsers(message, keyboard = null) {
     const activeUsers = users.filter(u => !u.isAdmin && !u.isBlocked);
     let successCount = 0;
@@ -1009,10 +998,16 @@ async function sendNotificationToAllUsers(message, keyboard = null) {
     
     for (const user of activeUsers) {
         try {
+            // ✅ Xabar yuborishdan oldin "yozmoqda" actioni - xabar yangiligini bildiradi
+            await bot.sendChatAction(user.userId, "typing");
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
             await bot.sendMessage(user.userId, message, {
                 parse_mode: "Markdown",
                 reply_markup: keyboard,
-                disable_notification: false
+                disable_notification: false,       // ✅ Aniq false - ovozli xabar
+                disable_web_page_preview: false,
+                protect_content: false              // ✅ Kontent himoyasi o'chiq
             });
             successCount++;
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -1260,8 +1255,16 @@ function clearUserSession(userId) {
 
 let userManagePage = 0;
 
-// -------------------- BOTNI YARATISH --------------------
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+// -------------------- BOTNI YARATISH (TO'G'RILANGAN) --------------------
+const bot = new TelegramBot(BOT_TOKEN, { 
+    polling: {
+        interval: 300,
+        autoStart: true,
+        params: {
+            timeout: 10
+        }
+    }
+});
 bot.deleteWebHook().catch(e => console.log("Webhook xatolik:", e.message));
 
 // ======================== BOT HANDLERLARI ========================
@@ -1745,7 +1748,7 @@ bot.on("message", async (msg) => {
         
         const result = await sendNotificationToAllUsers(messageText, keyboard);
         
-        await bot.sendMessage(chatId, `✅ *Xabar yuborildi!*\n\n✅ Yuborildi: ${result.success} ta foydalanuvchiga\n❌ Yuborilmadi: ${result.fail} ta`, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, `✅ *Xabar yuborildi!*\n\n✅ Yuborildi: ${result.success} ta foydalanuvchiga\n❌ Yuborilmadi: ${result.fail} ta\n💡 Xabarlar "o'qilgan" bo'lib ketmasligi uchun sendChatAction qo'shilgan!`, { parse_mode: "Markdown" });
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, deviceType);
@@ -1789,7 +1792,6 @@ bot.on("message", async (msg) => {
             return;
         }
         
-        // ✅ VERSIYA FAQAT SHU YERDA O'ZGARADI (kod o'zgarganda)
         updateBotVersion(session.data.newVersion, changes, userId);
         
         await bot.sendMessage(chatId, `✅ *Versiya yangilandi!*\n\n📌 Yangi versiya: \`V${session.data.newVersion}\`\n📝 O'zgarishlar: ${changes}\n\n⚠️ DIQQAT: Bu versiya faqat kod o'zgarganida yangilanadi!`, { parse_mode: "Markdown" });
@@ -2860,6 +2862,7 @@ console.log("🚗 ISUZU DOCTOR BOT ISHGA TUSHDI");
 console.log("=".repeat(60));
 console.log("📌 Versiya: V" + currentVersion);
 console.log("⚠️ Versiya FAQAT kod o'zgarganda yangilanadi!");
+console.log("💬 Xabarlar 'o'qilgan' bo'lib ketmasligi uchun sendChatAction qo'shilgan!");
 console.log("👑 Adminlar: " + ADMIN_IDS.join(", "));
 console.log("👥 Foydalanuvchilar: " + users.filter(u => !u.isAdmin).length);
 console.log("🔧 Diagnostikalar: " + diagnostics.length);
