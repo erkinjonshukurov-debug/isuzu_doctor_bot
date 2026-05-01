@@ -317,6 +317,72 @@ function getActiveVideos() {
     return videoList.filter(v => v.isActive);
 }
 
+// ========== YANGI: VIDEO O'CHIRISH FUNKSIYASI ==========
+function deleteVideo(videoId, adminId) {
+    const videoIndex = videoList.findIndex(v => v.id === videoId);
+    if (videoIndex === -1) {
+        return { success: false, message: "Video topilmadi!" };
+    }
+    
+    const video = videoList[videoIndex];
+    const videoTitle = video.title;
+    
+    videoList.splice(videoIndex, 1);
+    saveVideos();
+    
+    addSecurityLog("VIDEO_DELETED", adminId, "Video o'chirildi: " + videoTitle);
+    addVersionRecord(currentVersion, "Video o'chirildi: " + videoTitle, adminId);
+    
+    return { success: true, message: "Video muvaffaqiyatli o'chirildi: " + videoTitle };
+}
+
+// Admin uchun videolarni boshqarish paneli (o'chirish uchun)
+async function showVideoManagement(chatId, page = 0) {
+    const allVideos = videoList.filter(v => v.isActive); // Faqat faol videolar
+    const itemsPerPage = 5;
+    const start = page * itemsPerPage;
+    const end = start + itemsPerPage;
+    const pageVideos = allVideos.slice(start, end);
+    
+    if (allVideos.length === 0) {
+        await bot.sendMessage(chatId, "📹 *VIDEO BOSHQARISH*\n\nHozircha videolar mavjud emas.\n📤 'Video yuklash' tugmasi orqali video qo'shing!", {
+            parse_mode: "Markdown"
+        });
+        return;
+    }
+    
+    let msg = "📹 *VIDEO BOSHQARISH PANELI*\n━━━━━━━━━━━━━━━━━━\n\n";
+    msg += "📊 Jami videolar: " + allVideos.length + " ta\n";
+    msg += "👁️ Umumiy ko'rishlar: " + allVideos.reduce((sum, v) => sum + (v.views || 0), 0) + " ta\n";
+    msg += "━━━━━━━━━━━━━━━━━━\n\n";
+    msg += "🗑️ O'chirmoqchi bo'lgan videoni tanlang:\n\n";
+    
+    const keyboard = [];
+    
+    for (let i = 0; i < pageVideos.length; i++) {
+        const video = pageVideos[i];
+        const num = start + i + 1;
+        msg += `${num}. *${video.title}*\n`;
+        msg += `   👁️ ${video.views || 0} | 👍 ${video.likes || 0}\n`;
+        msg += `   📅 ${formatTashkentDate(video.uploadDate)}\n`;
+        msg += "━━━━━━━━━━━━━━━━━━\n";
+        
+        keyboard.push([{ text: "🗑️ " + num + ". " + video.title.substring(0, 25), callback_data: "delete_video_" + video.id }]);
+    }
+    
+    const navButtons = [];
+    if (page > 0) navButtons.push({ text: "◀️ Oldingi", callback_data: "video_manage_page_" + (page - 1) });
+    if (end < allVideos.length) navButtons.push({ text: "Keyingi ▶️", callback_data: "video_manage_page_" + (page + 1) });
+    if (navButtons.length > 0) keyboard.push(navButtons);
+    
+    keyboard.push([{ text: "🔙 Ortga", callback_data: "back_to_main" }]);
+    
+    await bot.sendMessage(chatId, msg, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard }
+    });
+}
+
 // -------------------- PAPKALARNI YARATISH --------------------
 function ensureVolumeDir() {
     if (!fs.existsSync(VOLUME_PATH)) {
@@ -998,16 +1064,15 @@ async function sendNotificationToAllUsers(message, keyboard = null) {
     
     for (const user of activeUsers) {
         try {
-            // ✅ Xabar yuborishdan oldin "yozmoqda" actioni - xabar yangiligini bildiradi
             await bot.sendChatAction(user.userId, "typing");
             await new Promise(resolve => setTimeout(resolve, 500));
             
             await bot.sendMessage(user.userId, message, {
                 parse_mode: "Markdown",
                 reply_markup: keyboard,
-                disable_notification: false,       // ✅ Aniq false - ovozli xabar
+                disable_notification: false,
                 disable_web_page_preview: false,
-                protect_content: false              // ✅ Kontent himoyasi o'chiq
+                protect_content: false
             });
             successCount++;
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -1053,10 +1118,10 @@ function getAdminReplyKeyboard() {
         ["⚠️ Xatoliklar", "📋 Diagnostika tarixi"],
         ["📅 Bugungi", "📄 Hisobot"],
         ["📹 Video galereya", "📤 Video yuklash"],
-        ["💾 Backup", "🔄 Tiklash"],
-        ["🚫 Foyd. boshqarish", "🔐 Xavfsizlik"],
-        ["📌 Versiya", "📢 Xabar yuborish"],
-        ["❌ Asosiy menyu"]
+        ["🗑️ Video o'chirish", "💾 Backup"],
+        ["🔄 Tiklash", "🚫 Foyd. boshqarish"],
+        ["🔐 Xavfsizlik", "📌 Versiya"],
+        ["📢 Xabar yuborish", "❌ Asosiy menyu"]
     ];
     
     return {
@@ -2086,6 +2151,11 @@ bot.on("message", async (msg) => {
             adminSession.data = {};
             await bot.sendMessage(chatId, "📤 *VIDEO YUKLASH*\n\nIltimos, video faylni yuboring:", { parse_mode: "Markdown" });
         }
+        // YANGI: VIDEO O'CHIRISH
+        else if (text === "🗑️ Video o'chirish") {
+            if (!isAdmin(userId)) return;
+            await showVideoManagement(chatId);
+        }
         else if (text === "💾 Backup") {
             await bot.sendMessage(chatId, "💾 *Backup yaratilmoqda...*", { parse_mode: "Markdown" });
             createBackup();
@@ -2235,6 +2305,64 @@ bot.on("callback_query", async (query) => {
     }
     
     const deviceType = getUserDevice(userId);
+    
+    // YANGI: Video o'chirish uchun callback
+    if (data.startsWith("delete_video_")) {
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
+            return;
+        }
+        
+        const videoId = parseInt(data.split("_")[2]);
+        
+        // Tasdiqlash uchun keyboard
+        const confirmKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "✅ Ha, o'chirish", callback_data: "confirm_delete_video_" + videoId }],
+                    [{ text: "❌ Yo'q, bekor qilish", callback_data: "video_manage_back" }]
+                ]
+            }
+        };
+        
+        const video = videoList.find(v => v.id === videoId);
+        if (video) {
+            await bot.sendMessage(chatId, `⚠️ *DIQQAT!*\n\n"${video.title}" nomli videoni o'chirmoqchisiz?\nBu amal ortga qaytmaydi!`, {
+                parse_mode: "Markdown",
+                ...confirmKeyboard
+            });
+        } else {
+            await bot.sendMessage(chatId, "❌ *Video topilmadi!*", { parse_mode: "Markdown" });
+        }
+        return;
+    }
+    
+    if (data.startsWith("confirm_delete_video_")) {
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
+            return;
+        }
+        
+        const videoId = parseInt(data.split("_")[3]);
+        const result = deleteVideo(videoId, userId);
+        await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
+        
+        // O'chirishdan keyin videolar ro'yxatini yangilash
+        await showVideoManagement(chatId);
+        return;
+    }
+    
+    if (data === "video_manage_back") {
+        await showVideoManagement(chatId);
+        return;
+    }
+    
+    if (data.startsWith("video_manage_page_")) {
+        if (!isAdmin(userId)) return;
+        const page = parseInt(data.split("_")[3]);
+        await showVideoManagement(chatId, page);
+        return;
+    }
     
     // Foydalanuvchi callback'lari
     if (data === "user_profile") {
