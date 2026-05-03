@@ -12,7 +12,6 @@ const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
 // ======================== VERSIYA TIZIMI ========================
 let currentVersion = "2.1";
 
-// VERSIYANI OSHIRISH - FAQAT KOD O'ZGARGANDA!
 function incrementVersion() {
     const parts = currentVersion.split('.');
     const major = parts[0];
@@ -140,7 +139,6 @@ function saveVersionHistory() {
     fs.writeFileSync(VERSION_HISTORY_FILE, JSON.stringify(versionHistory, null, 2));
 }
 
-// VERSIYA TARIXIGA YOZISH - VERSIYA O'ZGARMAYDI!
 function addVersionRecord(version, changes, adminId) {
     const record = {
         id: Date.now(),
@@ -158,7 +156,6 @@ function addVersionRecord(version, changes, adminId) {
     return record;
 }
 
-// KOD O'ZGARGANDA VERSIYANI YANGILASH (ADMIN QO'LDAN)
 function updateBotVersion(newVersion, changes, adminId) {
     currentVersion = newVersion;
     saveVersion();
@@ -317,7 +314,6 @@ function getActiveVideos() {
     return videoList.filter(v => v.isActive);
 }
 
-// ========== YANGI: VIDEO O'CHIRISH FUNKSIYASI ==========
 function deleteVideo(videoId, adminId) {
     const videoIndex = videoList.findIndex(v => v.id === videoId);
     if (videoIndex === -1) {
@@ -336,9 +332,8 @@ function deleteVideo(videoId, adminId) {
     return { success: true, message: "Video muvaffaqiyatli o'chirildi: " + videoTitle };
 }
 
-// Admin uchun videolarni boshqarish paneli (o'chirish uchun)
 async function showVideoManagement(chatId, page = 0) {
-    const allVideos = videoList.filter(v => v.isActive); // Faqat faol videolar
+    const allVideos = videoList.filter(v => v.isActive);
     const itemsPerPage = 5;
     const start = page * itemsPerPage;
     const end = start + itemsPerPage;
@@ -433,6 +428,16 @@ function loadData() {
         
         if (fs.existsSync(DIAGNOSTICS_FILE)) {
             diagnostics = JSON.parse(fs.readFileSync(DIAGNOSTICS_FILE, "utf8"));
+            // Eski ma'lumotlarni yangilash
+            diagnostics.forEach(d => {
+                if (d.diagnosticPrice === undefined) {
+                    d.diagnosticPrice = d.isFree ? 0 : DIAGNOSTIC_PRICE;
+                }
+                if (d.laborPrice === undefined) d.laborPrice = 0;
+                if (d.laborDescription === undefined) d.laborDescription = "";
+                if (d.totalPrice === undefined) d.totalPrice = (d.diagnosticPrice || 0) + (d.laborPrice || 0);
+            });
+            saveDiagnostics();
         } else {
             diagnostics = [];
             saveDiagnostics();
@@ -495,7 +500,7 @@ function saveVersion() {
     fs.writeFileSync(VERSION_FILE, JSON.stringify(versionData, null, 2));
 }
 
-// -------------------- BACKUP FUNKSIYALARI (VERSIYA O'ZGARMAYDI) --------------------
+// -------------------- BACKUP FUNKSIYALARI --------------------
 function createBackup() {
     ensureVolumeDir();
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
@@ -775,7 +780,8 @@ function addCarToUser(phoneNumber, carNumber, userInfo = {}) {
     return { success: true, message: "Yangi avtomobil qo'shildi!", carsCount: user.cars.length };
 }
 
-function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalNotes) {
+// ======================== YANGILANGAN DIAGNOSTIKA FUNKSIYASI ========================
+function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalNotes, extraWorkPrice = 0, extraWorkDescription = "") {
     const user = getUserByPhone(phoneNumber);
     if (!user) return { success: false, message: "Foydalanuvchi topilmadi" };
     
@@ -786,10 +792,13 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
     let bonusMessage = "";
     let newBonusCount = car.bonusCount;
     let newFreeDiagnostics = car.freeDiagnostics;
+    let finalBasePrice = DIAGNOSTIC_PRICE;
     
+    // Bepul diagnostika tekshiruvi (faqat asosiy diagnostika uchun)
     if (car.freeDiagnostics > 0) {
         isFree = true;
         newFreeDiagnostics--;
+        finalBasePrice = 0;
         bonusMessage = "🎉 BEPUL diagnostikadan foydalandingiz!";
     } else {
         newBonusCount++;
@@ -801,6 +810,10 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
         }
     }
     
+    // Qo'shimcha ish narxi (har doim pulli, hatto diagnostika bepul bo'lsa ham)
+    const laborPrice = extraWorkPrice || 0;
+    const totalPrice = finalBasePrice + laborPrice;
+    
     const diagnostic = {
         id: Date.now(),
         userId: user.userId,
@@ -809,35 +822,353 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
         date: new Date().toISOString(),
         workDescription: workDescription,
         additionalNotes: additionalNotes || "",
-        price: isFree ? 0 : DIAGNOSTIC_PRICE,
+        // ALOHIDA HISOB UCHUN YANGI MAYDONLAR:
+        diagnosticPrice: finalBasePrice,      // Faqat diagnostika puli
+        laborPrice: laborPrice,               // Faqat qo'shimcha mehnat puli
+        laborDescription: extraWorkDescription || "",
+        totalPrice: totalPrice,               // Jami
         isFree: isFree
     };
     diagnostics.push(diagnostic);
     saveDiagnostics();
     
-    car.bonusCount = newBonusCount;
-    car.freeDiagnostics = newFreeDiagnostics;
+    // Bonuslarni yangilash (faqat pullik diagnostika uchun)
+    if (!isFree) {
+        car.bonusCount = newBonusCount;
+        car.freeDiagnostics = newFreeDiagnostics;
+        user.totalBonusCount = (user.totalBonusCount || 0) + 1;
+    }
     car.totalDiagnostics++;
-    
     user.totalDiagnosticsAll++;
+    
     if (isFree) {
         user.totalFreeDiagnostics = (user.totalFreeDiagnostics || 0) + 1;
-    } else {
-        user.totalBonusCount = (user.totalBonusCount || 0) + 1;
     }
     
     saveUsers();
     addVersionRecord(currentVersion, "Diagnostika qo'shildi: " + carNumber, user.userId);
     
+    // Bonus xabarini yangilash
+    let finalBonusMessage = bonusMessage;
+    if (laborPrice > 0) {
+        if (isFree) {
+            finalBonusMessage = `🎉 BEPUL diagnostika!\n\n💰 Qo'shimcha mehnat narxi: ${laborPrice.toLocaleString()} so'm\n🔧 Bajarilgan qo'shimcha ish: ${extraWorkDescription}`;
+        } else {
+            finalBonusMessage += `\n\n💰 Qo'shimcha mehnat narxi: ${laborPrice.toLocaleString()} so'm\n🔧 Qo'shimcha ish: ${extraWorkDescription}`;
+        }
+    }
+    
     return {
         success: true,
         isFree: isFree,
-        price: isFree ? 0 : DIAGNOSTIC_PRICE,
+        diagnosticPrice: finalBasePrice,
+        laborPrice: laborPrice,
+        totalPrice: totalPrice,
         newBonusCount: newBonusCount,
         newFreeDiagnostics: newFreeDiagnostics,
-        bonusMessage: bonusMessage,
-        carNumber: carNumber
+        bonusMessage: finalBonusMessage,
+        carNumber: carNumber,
+        laborDescription: extraWorkDescription
     };
+}
+
+// ======================== YANGILANGAN STATISTIKA FUNKSIYASI ========================
+function getStatistics() {
+    const regularUsers = users.filter(u => !u.isAdmin);
+    const blockedUsers = users.filter(u => !u.isAdmin && u.isBlocked === true);
+    const activeUsers = regularUsers.filter(u => u.isBlocked !== true);
+    
+    let totalCars = 0;
+    for (const user of activeUsers) {
+        totalCars += user.cars.length;
+    }
+    
+    // ALOHIDA HISOBLASH
+    let totalDiagnosticIncome = 0;   // Faqat diagnostika puli
+    let totalLaborIncome = 0;         // Faqat mehnat puli
+    let freeDiagnosticCount = 0;
+    let laborWorkCount = 0;
+    let paidDiagnosticCount = 0;
+    
+    for (const d of diagnostics) {
+        // Diagnostika puli
+        const diagPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
+        if (diagPrice > 0) {
+            totalDiagnosticIncome += diagPrice;
+            paidDiagnosticCount++;
+        } else if (d.isFree === true) {
+            freeDiagnosticCount++;
+        }
+        
+        // Mehnat puli (qo'shimcha ish)
+        const laborPrice = d.laborPrice || 0;
+        if (laborPrice > 0) {
+            totalLaborIncome += laborPrice;
+            laborWorkCount++;
+        }
+    }
+    
+    const totalIncome = totalDiagnosticIncome + totalLaborIncome;
+    
+    return {
+        // Asosiy statistika
+        totalUsers: activeUsers.length,
+        blockedUsers: blockedUsers.length,
+        totalCars: totalCars,
+        
+        // Diagnostika statistikasi
+        totalDiagnostics: diagnostics.length,
+        paidDiagnostics: paidDiagnosticCount,
+        freeDiagnostics: freeDiagnosticCount,
+        diagnosticIncome: totalDiagnosticIncome,
+        diagnosticAverage: paidDiagnosticCount > 0 ? totalDiagnosticIncome / paidDiagnosticCount : 0,
+        
+        // Mehnat (qo'shimcha ish) statistikasi
+        laborWorks: laborWorkCount,
+        laborIncome: totalLaborIncome,
+        laborAverage: laborWorkCount > 0 ? totalLaborIncome / laborWorkCount : 0,
+        
+        // Jami
+        totalIncome: totalIncome,
+        
+        // Boshqa ma'lumotlar
+        totalErrors: errors.length,
+        currentVersion: currentVersion,
+        totalVideos: videoList.length,
+        totalVideoViews: videoList.reduce((sum, v) => sum + (v.views || 0), 0),
+        versionHistoryCount: versionHistory.length
+    };
+}
+
+// ======================== YANGILANGAN HISOBOT FUNKSIYASI ========================
+async function generateDiagnosticsReport(diagnosticsList) {
+    return new Promise((resolve, reject) => {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
+        const filename = "diagnostics_report_" + timestamp + ".txt";
+        const filepath = path.join(REPORTS_DIR, filename);
+        
+        let content = "";
+        content += "=".repeat(95) + "\n";
+        content += "                    DIAGNOSTIKA VA MEXNAT HISOBOTI\n";
+        content += "=".repeat(95) + "\n\n";
+        content += "Yaratilgan sana: " + formatTashkentDateTime(new Date()) + "\n";
+        content += "Jami diagnostikalar: " + diagnosticsList.length + " ta\n\n";
+        
+        // STATISTIKA
+        let totalDiagnosticIncome = 0;
+        let totalLaborIncome = 0;
+        let freeCount = 0;
+        let laborWorkCount = 0;
+        let paidDiagnosticCount = 0;
+        
+        for (const d of diagnosticsList) {
+            const diagPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
+            if (diagPrice > 0) {
+                totalDiagnosticIncome += diagPrice;
+                paidDiagnosticCount++;
+            } else if (d.isFree === true) {
+                freeCount++;
+            }
+            
+            const laborPrice = d.laborPrice || 0;
+            if (laborPrice > 0) {
+                totalLaborIncome += laborPrice;
+                laborWorkCount++;
+            }
+        }
+        
+        const totalIncome = totalDiagnosticIncome + totalLaborIncome;
+        
+        content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        content += "                           📊 UMUMIY STATISTIKA\n";
+        content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        
+        content += "🔧 DIAGNOSTIKA:\n";
+        content += `   📊 Jami: ${diagnosticsList.length} ta\n`;
+        content += `   💰 To'lovli: ${paidDiagnosticCount} ta\n`;
+        content += `   🎉 Bepul: ${freeCount} ta\n`;
+        content += `   💵 Diagnostika daromadi: ${totalDiagnosticIncome.toLocaleString()} so'm\n\n`;
+        
+        content += "🔨 QO'SHIMCHA MEXNAT (ISHLAR):\n";
+        content += `   📊 Jami ishlar: ${laborWorkCount} ta\n`;
+        content += `   💵 Mehnat daromadi: ${totalLaborIncome.toLocaleString()} so'm\n`;
+        if (laborWorkCount > 0) {
+            content += `   📊 O'rtacha mehnat narxi: ${Math.round(totalLaborIncome / laborWorkCount).toLocaleString()} so'm\n`;
+        }
+        content += "\n";
+        
+        content += "💰 JAMI DAROMAD:\n";
+        content += `   💵 Umumiy: ${totalIncome.toLocaleString()} so'm\n`;
+        if (totalIncome > 0) {
+            content += `   🔧 Diagnostika: ${totalDiagnosticIncome.toLocaleString()} so'm (${((totalDiagnosticIncome/totalIncome)*100 || 0).toFixed(1)}%)\n`;
+            content += `   🔨 Mehnat: ${totalLaborIncome.toLocaleString()} so'm (${((totalLaborIncome/totalIncome)*100 || 0).toFixed(1)}%)\n`;
+        }
+        content += "\n";
+        
+        content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        content += "                         📋 BATAFSIL DIAGNOSTIKALAR\n";
+        content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        
+        let i = 1;
+        for (const diag of diagnosticsList.slice(0, 300)) {
+            const diagnosticPrice = diag.diagnosticPrice !== undefined ? diag.diagnosticPrice : (diag.isFree ? 0 : DIAGNOSTIC_PRICE);
+            const laborPrice = diag.laborPrice || 0;
+            const laborDesc = diag.laborDescription || "";
+            
+            content += `📌 ${i}-DIAGNOSTIKA\n`;
+            content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            content += `📆 Sana: ${formatTashkentDateTime(diag.date)}\n`;
+            content += `🚗 Avtomobil raqami: ${diag.carNumber}\n`;
+            content += `👤 Telefon: ${diag.phoneNumber}\n`;
+            content += "\n";
+            
+            content += "📝 ASOSIY BAJARILGAN ISHLAR:\n";
+            content += `   ${diag.workDescription}\n\n`;
+            
+            if (laborPrice > 0 && laborDesc) {
+                content += "🔨 QO'SHIMCHA MEXNAT:\n";
+                content += `   📌 Bajarilgan ish: ${laborDesc}\n`;
+                content += `   💰 Narxi: ${laborPrice.toLocaleString()} so'm\n\n`;
+            }
+            
+            if (diag.additionalNotes && diag.additionalNotes !== "") {
+                content += "📌 QO'SHIMCHA ESLATMA:\n";
+                content += `   ${diag.additionalNotes}\n\n`;
+            }
+            
+            content += "💰 NARXLAR:\n";
+            if (diagnosticPrice === 0 && laborPrice === 0) {
+                content += "   🎉 JAMI: BEPUL (To'liq)\n";
+            } else {
+                if (diagnosticPrice > 0) {
+                    content += `   🔧 Diagnostika: ${diagnosticPrice.toLocaleString()} so'm\n`;
+                } else if (diag.isFree) {
+                    content += `   🔧 Diagnostika: BEPUL\n`;
+                }
+                if (laborPrice > 0) {
+                    content += `   🔨 Mehnat: ${laborPrice.toLocaleString()} so'm\n`;
+                }
+                content += `   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+                content += `   💰 JAMI: ${(diagnosticPrice + laborPrice).toLocaleString()} so'm\n`;
+            }
+            content += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+            i++;
+        }
+        
+        content += "\n" + "=".repeat(95) + "\n";
+        content += `Hisobot yaratildi: ${formatTashkentDateTime(new Date())}\n`;
+        content += `© ${new Date().getFullYear()} ${BOT_OWNER}. Barcha huquqlar himoyalangan.\n`;
+        content += "=".repeat(95) + "\n";
+        
+        try {
+            fs.writeFileSync(filepath, content, "utf8");
+            resolve(filepath);
+        } catch (err) {
+            reject(err);
+        }
+    });
+}
+
+// ======================== OYLIK DAROMAD TAHLILI (YANGILANGAN) ========================
+function getMonthlyDetailedIncome(year, month) {
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0);
+    
+    const monthlyDiagnostics = diagnostics.filter(d => {
+        const diagDate = new Date(d.date);
+        return diagDate >= startDate && diagDate <= endDate;
+    });
+    
+    let diagnosticIncome = 0;
+    let laborIncome = 0;
+    let diagnosticCount = 0;
+    let laborCount = 0;
+    let freeCount = 0;
+    
+    for (const d of monthlyDiagnostics) {
+        const diagPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
+        if (diagPrice > 0) {
+            diagnosticIncome += diagPrice;
+            diagnosticCount++;
+        } else if (d.isFree) {
+            freeCount++;
+        }
+        
+        const laborPrice = d.laborPrice || 0;
+        if (laborPrice > 0) {
+            laborIncome += laborPrice;
+            laborCount++;
+        }
+    }
+    
+    return {
+        year: year,
+        month: month,
+        diagnosticIncome: diagnosticIncome,
+        laborIncome: laborIncome,
+        totalIncome: diagnosticIncome + laborIncome,
+        diagnosticCount: diagnosticCount,
+        laborCount: laborCount,
+        freeCount: freeCount,
+        totalDiagnostics: monthlyDiagnostics.length
+    };
+}
+
+function getAllMonthsIncome() {
+    const monthsData = [];
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+    
+    for (let i = 0; i < 12; i++) {
+        let year = currentYear;
+        let month = currentMonth - i;
+        if (month <= 0) {
+            month += 12;
+            year--;
+        }
+        if (year >= 2024) {
+            const monthData = getMonthlyDetailedIncome(year, month);
+            monthsData.push(monthData);
+        }
+    }
+    return monthsData;
+}
+
+function formatMonthName(year, month) {
+    const monthNames = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'];
+    return `${monthNames[month - 1]} ${year}`;
+}
+
+function getYearlyIncome(year) {
+    let totalDiagnosticIncome = 0;
+    let totalLaborIncome = 0;
+    let totalDiagnostics = 0;
+    
+    for (let month = 1; month <= 12; month++) {
+        const monthData = getMonthlyDetailedIncome(year, month);
+        totalDiagnosticIncome += monthData.diagnosticIncome;
+        totalLaborIncome += monthData.laborIncome;
+        totalDiagnostics += monthData.totalDiagnostics;
+    }
+    
+    return {
+        year: year,
+        diagnosticIncome: totalDiagnosticIncome,
+        laborIncome: totalLaborIncome,
+        totalIncome: totalDiagnosticIncome + totalLaborIncome,
+        totalDiagnostics: totalDiagnostics,
+        averageMonthlyIncome: (totalDiagnosticIncome + totalLaborIncome) / 12
+    };
+}
+
+function getAvailableYears() {
+    const years = new Set();
+    diagnostics.forEach(d => {
+        const year = new Date(d.date).getFullYear();
+        years.add(year);
+    });
+    return Array.from(years).sort((a, b) => b - a);
 }
 
 function getUserDiagnostics(phoneNumber, limit = 10) {
@@ -872,35 +1203,6 @@ function getAllDiagnostics(limit = 500) {
     return diagnostics.slice(-limit).reverse();
 }
 
-function getStatistics() {
-    const regularUsers = users.filter(u => !u.isAdmin);
-    const blockedUsers = users.filter(u => !u.isAdmin && u.isBlocked === true);
-    const activeUsers = regularUsers.filter(u => u.isBlocked !== true);
-    
-    let totalCars = 0;
-    for (const user of activeUsers) {
-        totalCars += user.cars.length;
-    }
-    
-    const paidDiagnostics = diagnostics.filter(d => !d.isFree);
-    const totalIncome = paidDiagnostics.reduce((sum, d) => sum + d.price, 0);
-    
-    return {
-        totalUsers: activeUsers.length,
-        blockedUsers: blockedUsers.length,
-        totalCars: totalCars,
-        totalDiagnostics: diagnostics.length,
-        paidDiagnostics: paidDiagnostics.length,
-        freeDiagnostics: diagnostics.filter(d => d.isFree).length,
-        totalIncome: totalIncome,
-        totalErrors: errors.length,
-        currentVersion: currentVersion,
-        totalVideos: videoList.length,
-        totalVideoViews: videoList.reduce((sum, v) => sum + (v.views || 0), 0),
-        versionHistoryCount: versionHistory.length
-    };
-}
-
 function getErrors() {
     return errors.slice(-50).reverse();
 }
@@ -920,143 +1222,7 @@ function getAllUsersWithDetails() {
     }));
 }
 
-// -------------------- OYLIK DAROMAD TAHLILI --------------------
-function getMonthlyIncome(year, month) {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0);
-    
-    const monthlyDiagnostics = diagnostics.filter(d => {
-        const diagDate = new Date(d.date);
-        return diagDate >= startDate && diagDate <= endDate && !d.isFree;
-    });
-    
-    const totalIncome = monthlyDiagnostics.reduce((sum, d) => sum + d.price, 0);
-    const diagnosticCount = monthlyDiagnostics.length;
-    const averageCheck = diagnosticCount > 0 ? totalIncome / diagnosticCount : 0;
-    
-    return {
-        year: year,
-        month: month,
-        totalIncome: totalIncome,
-        diagnosticCount: diagnosticCount,
-        averageCheck: averageCheck,
-        diagnostics: monthlyDiagnostics
-    };
-}
-
-function getAllMonthsIncome() {
-    const monthsData = [];
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear();
-    const currentMonth = currentDate.getMonth() + 1;
-    
-    for (let i = 0; i < 12; i++) {
-        let year = currentYear;
-        let month = currentMonth - i;
-        if (month <= 0) {
-            month += 12;
-            year--;
-        }
-        if (year >= 2024) {
-            const monthData = getMonthlyIncome(year, month);
-            monthsData.push(monthData);
-        }
-    }
-    return monthsData;
-}
-
-function formatMonthName(year, month) {
-    const monthNames = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'];
-    return `${monthNames[month - 1]} ${year}`;
-}
-
-function getYearlyIncome(year) {
-    let totalYearlyIncome = 0;
-    let totalDiagnostics = 0;
-    
-    for (let month = 1; month <= 12; month++) {
-        const monthData = getMonthlyIncome(year, month);
-        totalYearlyIncome += monthData.totalIncome;
-        totalDiagnostics += monthData.diagnosticCount;
-    }
-    
-    return {
-        year: year,
-        totalIncome: totalYearlyIncome,
-        totalDiagnostics: totalDiagnostics,
-        averageMonthlyIncome: totalYearlyIncome / 12
-    };
-}
-
-function getAvailableYears() {
-    const years = new Set();
-    diagnostics.forEach(d => {
-        if (!d.isFree) {
-            const year = new Date(d.date).getFullYear();
-            years.add(year);
-        }
-    });
-    return Array.from(years).sort((a, b) => b - a);
-}
-
-// -------------------- HISOBOT YARATISH --------------------
-async function generateDiagnosticsReport(diagnosticsList) {
-    return new Promise((resolve, reject) => {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
-        const filename = "diagnostics_report_" + timestamp + ".txt";
-        const filepath = path.join(REPORTS_DIR, filename);
-        
-        let content = "";
-        content += "=".repeat(80) + "\n";
-        content += "                    DIAGNOSTIKA HISOBOTI\n";
-        content += "=".repeat(80) + "\n\n";
-        content += "Yaratilgan sana: " + formatTashkentDateTime(new Date()) + "\n";
-        content += "Jami diagnostikalar: " + diagnosticsList.length + " ta\n\n";
-        
-        const paidCount = diagnosticsList.filter(d => !d.isFree).length;
-        const freeCount = diagnosticsList.filter(d => d.isFree).length;
-        const totalIncome = diagnosticsList.filter(d => !d.isFree).reduce((sum, d) => sum + d.price, 0);
-        
-        content += "-------------------------- STATISTIKA --------------------------\n";
-        content += "To'lovli diagnostikalar: " + paidCount + " ta\n";
-        content += "Bepul diagnostikalar: " + freeCount + " ta\n";
-        content += "Umumiy daromad: " + totalIncome.toLocaleString() + " som\n\n";
-        
-        content += "----------------------- DIAGNOSTIKALAR RO'YXATI -----------------------\n";
-        content += "=".repeat(80) + "\n\n";
-        
-        let i = 1;
-        for (const diag of diagnosticsList.slice(0, 200)) {
-            content += "📅 " + i + "-DIAGNOSTIKA\n";
-            content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            content += "📆 Sana: " + formatTashkentDateTime(diag.date) + "\n";
-            content += "🚗 Avtomobil raqami: " + diag.carNumber + "\n";
-            content += "📝 Bajarilgan ishlar:\n" + diag.workDescription + "\n";
-            
-            if (diag.additionalNotes && diag.additionalNotes !== "") {
-                content += "\n➕ Qo'shimcha eslatmalar:\n" + diag.additionalNotes + "\n";
-            }
-            
-            content += "\n💰 Narx: " + (diag.isFree ? "BEPUL" : diag.price.toLocaleString() + " so'm") + "\n";
-            content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-            i++;
-        }
-        
-        content += "\nJami: " + diagnosticsList.length + " ta diagnostika\n";
-        content += "Hisobot yaratildi: " + formatTashkentDateTime(new Date()) + "\n";
-        content += "=".repeat(80) + "\n";
-        content += "\n© " + new Date().getFullYear() + " " + BOT_OWNER + ". Barcha huquqlar himoyalangan.\n";
-        
-        try {
-            fs.writeFileSync(filepath, content, "utf8");
-            resolve(filepath);
-        } catch (err) {
-            reject(err);
-        }
-    });
-}
-
-// -------------------- XABAR YUBORISH (TO'G'RILANGAN) --------------------
+// -------------------- XABAR YUBORISH --------------------
 async function sendNotificationToAllUsers(message, keyboard = null) {
     const activeUsers = users.filter(u => !u.isAdmin && !u.isBlocked);
     let successCount = 0;
@@ -1093,7 +1259,7 @@ async function sendReminder(chatId) {
     }
 }
 
-// -------------------- INLINE KEYBOARD (FOYDALANUVCHI UCHUN) --------------------
+// -------------------- INLINE KEYBOARD --------------------
 function getCompactInlineKeyboard() {
     return {
         reply_markup: {
@@ -1110,7 +1276,6 @@ function getCompactInlineKeyboard() {
     };
 }
 
-// ADMIN UCHUN REPLY KEYBOARD
 function getAdminReplyKeyboard() {
     const keyboard = [
         ["📊 Statistika", "👥 Foydalanuvchilar"],
@@ -1164,7 +1329,6 @@ function getUserPaymentKeyboard() {
     };
 }
 
-// Asosiy menyu
 async function sendMainMenu(chatId, isAdminUser = false, deviceType = "web") {
     try {
         if (isAdminUser) {
@@ -1320,7 +1484,7 @@ function clearUserSession(userId) {
 
 let userManagePage = 0;
 
-// -------------------- BOTNI YARATISH (TO'G'RILANGAN) --------------------
+// -------------------- BOTNI YARATISH --------------------
 const bot = new TelegramBot(BOT_TOKEN, { 
     polling: {
         interval: 300,
@@ -1548,7 +1712,7 @@ bot.onText(/\/cleanusers/, async (msg) => {
     await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
 });
 
-// -------------------- FOYDALANUVCHI / BUYRUQLARI --------------------
+// -------------------- FOYDALANUVCHI BUYRUQLARI --------------------
 bot.onText(/\/profile/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1661,17 +1825,35 @@ bot.onText(/\/history/, async (msg) => {
     
     await sendReminder(chatId);
     for (const d of diags) {
+        const diagnosticPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
+        const laborPrice = d.laborPrice || 0;
+        
         let diagText = "📅 *" + formatTashkentDate(d.date) + "*\n";
         diagText += "🕐 " + formatTashkentTime(d.date) + "\n";
         diagText += "🚗 *" + d.carNumber + "*\n\n";
         diagText += "📝 *Bajarilgan ishlar:*\n" + d.workDescription + "\n\n";
         
+        if (laborPrice > 0 && d.laborDescription) {
+            diagText += "🔨 *Qo'shimcha mehnat:*\n";
+            diagText += "   📌 " + d.laborDescription + "\n";
+            diagText += "   💰 " + laborPrice.toLocaleString() + " so'm\n\n";
+        }
+        
         if (d.additionalNotes && d.additionalNotes !== "") {
             diagText += "📌 *Eslatma:*\n" + d.additionalNotes + "\n\n";
         }
         
-        diagText += "💰 *Narx:* " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "🎉 BEPUL") + "\n";
-        diagText += "━━━━━━━━━━━━━━━━━━\n";
+        diagText += "💰 *Narx:* ";
+        if (diagnosticPrice === 0 && laborPrice === 0) {
+            diagText += "🎉 BEPUL (To'liq)";
+        } else if (diagnosticPrice === 0 && laborPrice > 0) {
+            diagText += laborPrice.toLocaleString() + " so'm (faqat mehnat uchun)";
+        } else if (diagnosticPrice > 0 && laborPrice === 0) {
+            diagText += diagnosticPrice.toLocaleString() + " so'm";
+        } else {
+            diagText += (diagnosticPrice + laborPrice).toLocaleString() + " so'm (Diagnostika: " + diagnosticPrice.toLocaleString() + " + Mehnat: " + laborPrice.toLocaleString() + ")";
+        }
+        diagText += "\n━━━━━━━━━━━━━━━━━━\n";
         
         await bot.sendMessage(chatId, diagText, { parse_mode: "Markdown" });
     }
@@ -1699,7 +1881,54 @@ bot.onText(/\/statistika/, async (msg) => {
     if (!isAdmin(userId)) return;
     
     const stats = getStatistics();
-    await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: " + stats.totalUsers + "\n🚫 Bloklanganlar: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 To'lovli: " + stats.paidDiagnostics + "\n🎉 Bepul: " + stats.freeDiagnostics + "\n💵 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n⚠️ Xatoliklar: " + stats.totalErrors + "\n📹 Videolar: " + stats.totalVideos + " ta\n👁️ Video ko'rishlar: " + stats.totalVideoViews + " ta\n📌 Joriy versiya: `V" + stats.currentVersion + "`\n📊 Yangilanishlar soni: " + stats.versionHistoryCount + " ta\n\n🔑 Litsenziya ID: `" + uniqueInstallId + "`", { parse_mode: "Markdown" });
+    
+    let statMsg = "📊 *STATISTIKA* 📊\n";
+    statMsg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    
+    statMsg += "👥 *FOYDALANUVCHILAR*\n";
+    statMsg += `   👤 Faol: ${stats.totalUsers}\n`;
+    statMsg += `   🚫 Bloklangan: ${stats.blockedUsers}\n`;
+    statMsg += `   🚗 Avtomobillar: ${stats.totalCars}\n\n`;
+    
+    statMsg += "🔧 *DIAGNOSTIKA*\n";
+    statMsg += `   📊 Jami: ${stats.totalDiagnostics} ta\n`;
+    statMsg += `   💰 To'lovli: ${stats.paidDiagnostics} ta\n`;
+    statMsg += `   🎉 Bepul: ${stats.freeDiagnostics} ta\n`;
+    statMsg += `   💵 Diagnostika daromadi: ${stats.diagnosticIncome.toLocaleString()} so'm\n`;
+    if (stats.diagnosticAverage > 0) {
+        statMsg += `   📊 O'rtacha chek: ${Math.round(stats.diagnosticAverage).toLocaleString()} so'm\n`;
+    }
+    statMsg += "\n";
+    
+    statMsg += "🔨 *QO'SHIMCHA MEXNAT (ISHLAR)*\n";
+    statMsg += `   📊 Jami ishlar: ${stats.laborWorks} ta\n`;
+    statMsg += `   💵 Mehnat daromadi: ${stats.laborIncome.toLocaleString()} so'm\n`;
+    if (stats.laborAverage > 0) {
+        statMsg += `   📊 O'rtacha mehnat narxi: ${Math.round(stats.laborAverage).toLocaleString()} so'm\n`;
+    }
+    statMsg += "\n";
+    
+    statMsg += "💰 *JAMI DAROMAD*\n";
+    statMsg += `   💵 Umumiy: ${stats.totalIncome.toLocaleString()} so'm\n`;
+    if (stats.totalIncome > 0) {
+        statMsg += `   🔧 Diagnostika: ${stats.diagnosticIncome.toLocaleString()} so'm (${((stats.diagnosticIncome/stats.totalIncome)*100 || 0).toFixed(1)}%)\n`;
+        statMsg += `   🔨 Mehnat: ${stats.laborIncome.toLocaleString()} so'm (${((stats.laborIncome/stats.totalIncome)*100 || 0).toFixed(1)}%)\n`;
+    }
+    statMsg += "\n";
+    
+    statMsg += "📹 *VIDEO*\n";
+    statMsg += `   🎬 Videolar: ${stats.totalVideos} ta\n`;
+    statMsg += `   👁️ Ko'rishlar: ${stats.totalVideoViews} ta\n\n`;
+    
+    statMsg += "ℹ️ *TEXNIK MA'LUMOT*\n";
+    statMsg += `   ⚠️ Xatoliklar: ${stats.totalErrors}\n`;
+    statMsg += `   📌 Versiya: \`V${stats.currentVersion}\`\n`;
+    statMsg += `   📊 Yangilanishlar: ${stats.versionHistoryCount} ta\n`;
+    statMsg += `   🔑 Litsenziya ID: \`${uniqueInstallId}\`\n`;
+    statMsg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    statMsg += `© ${BOT_OWNER}`;
+    
+    await bot.sendMessage(chatId, statMsg, { parse_mode: "Markdown" });
     await sendMainMenu(chatId, true, getUserDevice(userId));
 });
 
@@ -1813,14 +2042,14 @@ bot.on("message", async (msg) => {
         
         const result = await sendNotificationToAllUsers(messageText, keyboard);
         
-        await bot.sendMessage(chatId, `✅ *Xabar yuborildi!*\n\n✅ Yuborildi: ${result.success} ta foydalanuvchiga\n❌ Yuborilmadi: ${result.fail} ta\n💡 Xabarlar "o'qilgan" bo'lib ketmasligi uchun sendChatAction qo'shilgan!`, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, `✅ *Xabar yuborildi!*\n\n✅ Yuborildi: ${result.success} ta foydalanuvchiga\n❌ Yuborilmadi: ${result.fail} ta`, { parse_mode: "Markdown" });
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, deviceType);
         return;
     }
     
-    // Admin versiya yangilash (KOD O'ZGARGANDA!)
+    // Admin versiya yangilash
     if (session.step === "admin_update_version") {
         if (!isAdmin(userId)) {
             clearUserSession(userId);
@@ -1933,7 +2162,7 @@ bot.on("message", async (msg) => {
         return;
     }
     
-    // Admin diagnostika qo'shish
+    // ======================== ADMIN DIAGNOSTIKA QO'SHISH (YANGILANGAN) ========================
     if (session.step === "admin_add_diagnostic") {
         if (!isAdmin(userId)) {
             clearUserSession(userId);
@@ -1964,7 +2193,7 @@ bot.on("message", async (msg) => {
         session.data.targetCar = foundCar;
         session.step = "admin_work_description";
         
-        await bot.sendMessage(chatId, "✅ Foydalanuvchi topildi:\n\n👤 " + (foundUser.fullName || "Ismsiz") + "\n🚗 " + foundCar.carNumber + "\n🎁 Bonus: " + foundCar.bonusCount + "/5\n🎉 Bepul: " + foundCar.freeDiagnostics + "\n\n🔧 *Bajarilgan ishlarni kiriting:*", { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, "✅ Foydalanuvchi topildi:\n\n👤 " + (foundUser.fullName || "Ismsiz") + "\n🚗 " + foundCar.carNumber + "\n🎁 Bonus: " + foundCar.bonusCount + "/5\n🎉 Bepul: " + foundCar.freeDiagnostics + "\n\n🔧 *Asosiy bajarilgan ishlarni kiriting:*", { parse_mode: "Markdown" });
         return;
     }
     
@@ -1975,8 +2204,75 @@ bot.on("message", async (msg) => {
             return;
         }
         session.data.workDescription = text;
+        session.step = "admin_extra_work_question";
+        await bot.sendMessage(chatId, "✅ Asosiy ishlar qabul qilindi!\n\n➕ *Qo'shimcha mehnat (ish) bajarildimi?*\n\n🟢 Ha bo'lsa: 'ha' yoki 'bor' yozing\n🔴 Yo'q bo'lsa: 'yo'q' yoki 0 yozing", { parse_mode: "Markdown" });
+        return;
+    }
+    
+    if (session.step === "admin_extra_work_question") {
+        if (!isAdmin(userId)) {
+            clearUserSession(userId);
+            await sendMainMenu(chatId, false, deviceType);
+            return;
+        }
+        
+        const answer = text.toLowerCase().trim();
+        
+        if (answer === "ha" || answer === "bor" || answer === "yes") {
+            session.step = "admin_extra_work_price";
+            await bot.sendMessage(chatId, "💰 *Qo'shimcha mehnat (ish) narxini kiriting:*\n\nMasalan: 50000 yoki 150000\n\n⚠️ Faqat son kiriting (so'mda)\n❌ Bekor qilish: /cancel", { parse_mode: "Markdown" });
+        } else {
+            session.data.extraWorkPrice = 0;
+            session.data.extraWorkDescription = "";
+            session.step = "admin_additional_notes";
+            await bot.sendMessage(chatId, "✅ Qo'shimcha ish yo'q!\n\n➕ *Qo'shimcha eslatmalar kiriting* (ixtiyoriy):\n\n❌ Bekor qilish uchun /cancel yozing", { parse_mode: "Markdown" });
+        }
+        return;
+    }
+    
+    if (session.step === "admin_extra_work_price") {
+        if (!isAdmin(userId)) {
+            clearUserSession(userId);
+            await sendMainMenu(chatId, false, deviceType);
+            return;
+        }
+        
+        if (text === "/cancel") {
+            clearUserSession(userId);
+            await bot.sendMessage(chatId, "❌ *Bekor qilindi!*", { parse_mode: "Markdown" });
+            await sendMainMenu(chatId, true, deviceType);
+            return;
+        }
+        
+        const price = parseInt(text);
+        if (isNaN(price) || price < 0) {
+            await bot.sendMessage(chatId, "❌ *Noto'g'ri narx!* Iltimos, faqat son kiriting (masalan: 50000):", { parse_mode: "Markdown" });
+            return;
+        }
+        
+        session.data.extraWorkPrice = price;
+        session.step = "admin_extra_work_description";
+        await bot.sendMessage(chatId, "✅ Narx qabul qilindi: " + price.toLocaleString() + " so'm\n\n🔧 *Qo'shimcha mehnat (ish) tavsifini kiriting:*\n\nMasalan: 'Moy almashtirish', 'Filtr tozalash', 'G'ildiraklarni balanslash' va hokazo\n\n❌ Bekor qilish: /cancel", { parse_mode: "Markdown" });
+        return;
+    }
+    
+    if (session.step === "admin_extra_work_description") {
+        if (!isAdmin(userId)) {
+            clearUserSession(userId);
+            await sendMainMenu(chatId, false, deviceType);
+            return;
+        }
+        
+        if (text === "/cancel") {
+            clearUserSession(userId);
+            await bot.sendMessage(chatId, "❌ *Bekor qilindi!*", { parse_mode: "Markdown" });
+            await sendMainMenu(chatId, true, deviceType);
+            return;
+        }
+        
+        session.data.extraWorkDescription = text;
         session.step = "admin_additional_notes";
-        await bot.sendMessage(chatId, "✅ Bajarilgan ishlar qabul qilindi!\n\n➕ *Qo'shimcha eslatmalar kiriting* (ixtiyoriy):", { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, "✅ Qo'shimcha mehnat ma'lumotlari qabul qilindi!\n\n➕ *Asosiy qo'shimcha eslatmalar kiriting* (ixtiyoriy):\n\n❌ Bekor qilish uchun /cancel yozing", { parse_mode: "Markdown" });
         return;
     }
     
@@ -1986,31 +2282,64 @@ bot.on("message", async (msg) => {
             await sendMainMenu(chatId, false, deviceType);
             return;
         }
+        
         session.data.additionalNotes = text || "";
         
+        // Diagnostikani qo'shish
         const result = addDiagnosticToCar(
             session.data.targetUser.phone,
             session.data.targetCar.carNumber,
             session.data.workDescription,
-            session.data.additionalNotes
+            session.data.additionalNotes,
+            session.data.extraWorkPrice || 0,
+            session.data.extraWorkDescription || ""
         );
         
-        let adminResponse = "🔧 *DIAGNOSTIKA QO'SHILDI*\n\n👤 " + (session.data.targetUser.fullName || "Ismsiz") + "\n🚗 " + result.carNumber + "\n💰 " + result.price.toLocaleString() + " so'm\n\n" + result.bonusMessage;
+        // Admin uchun xabar
+        let adminResponse = "🔧 *DIAGNOSTIKA QO'SHILDI*\n\n";
+        adminResponse += "👤 " + (session.data.targetUser.fullName || "Ismsiz") + "\n";
+        adminResponse += "🚗 " + result.carNumber + "\n";
+        adminResponse += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        adminResponse += "💰 *NARXLAR:*\n";
+        adminResponse += "   🔧 Diagnostika: " + (result.diagnosticPrice > 0 ? result.diagnosticPrice.toLocaleString() + " so'm" : "BEPUL") + "\n";
+        if (result.laborPrice > 0) {
+            adminResponse += "   🔨 Qo'shimcha mehnat: " + result.laborPrice.toLocaleString() + " so'm\n";
+            adminResponse += "   📝 " + session.data.extraWorkDescription + "\n";
+        }
+        adminResponse += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        adminResponse += "💰 *JAMI:* " + result.totalPrice.toLocaleString() + " so'm\n\n";
+        adminResponse += result.bonusMessage;
         
         await bot.sendMessage(chatId, adminResponse, { parse_mode: "Markdown" });
         
+        // Foydalanuvchi uchun xabar
         let userMsg = "🔧 *DIAGNOSTIKA NATIJALARI*\n\n";
         userMsg += "🚗 *" + result.carNumber + "*\n";
         userMsg += "📅 " + formatTashkentDate(new Date()) + "\n";
         userMsg += "🕐 " + formatTashkentTime(new Date()) + "\n\n";
-        userMsg += "📝 *Bajarilgan ishlar:*\n" + session.data.workDescription + "\n\n";
+        userMsg += "📝 *Asosiy bajarilgan ishlar:*\n" + session.data.workDescription + "\n\n";
+        
+        if (session.data.extraWorkDescription && session.data.extraWorkPrice > 0) {
+            userMsg += "🔨 *Qo'shimcha mehnat:*\n";
+            userMsg += "   📌 " + session.data.extraWorkDescription + "\n";
+            userMsg += "   💰 " + session.data.extraWorkPrice.toLocaleString() + " so'm\n\n";
+        }
         
         if (session.data.additionalNotes && session.data.additionalNotes !== "") {
             userMsg += "📌 *Eslatma:*\n" + session.data.additionalNotes + "\n\n";
         }
         
-        userMsg += "💰 *Narx:* " + (result.isFree ? "BEPUL" : result.price.toLocaleString() + " so'm") + "\n\n";
-        userMsg += result.bonusMessage;
+        userMsg += "💰 *Narx:* ";
+        if (result.isFree && result.laborPrice === 0) {
+            userMsg += "🎉 BEPUL (To'liq)";
+        } else if (result.isFree && result.laborPrice > 0) {
+            userMsg += result.laborPrice.toLocaleString() + " so'm (faqat mehnat uchun)";
+        } else if (!result.isFree && result.laborPrice === 0) {
+            userMsg += result.diagnosticPrice.toLocaleString() + " so'm";
+        } else {
+            userMsg += result.totalPrice.toLocaleString() + " so'm (Diagnostika: " + result.diagnosticPrice.toLocaleString() + " + Mehnat: " + result.laborPrice.toLocaleString() + ")";
+        }
+        userMsg += "\n\n" + result.bonusMessage;
         
         bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: "Markdown" }).catch(() => {});
         
@@ -2042,7 +2371,7 @@ bot.on("message", async (msg) => {
         return;
     }
     
-    // AGAR SESSION YO'Q BO'LSA - Admin matnli buyruqlar
+    // AGAR SESSION YO'Q BO'LSA
     if (!user) {
         await bot.sendMessage(chatId, "❌ Ro'yxatdan o'tmagansiz! Iltimos, /start bosing.", { parse_mode: "Markdown" });
         return;
@@ -2057,7 +2386,54 @@ bot.on("message", async (msg) => {
     if (isAdmin(userId)) {
         if (text === "📊 Statistika") {
             const stats = getStatistics();
-            await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol: ${stats.totalUsers}\n🚫 Bloklangan: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${stats.totalVideos} ta\n📌 Versiya: \`V${stats.currentVersion}\`\n📊 Yangilanishlar: ${stats.versionHistoryCount} ta\n🔑 Litsenziya ID: \`${uniqueInstallId}\``, { parse_mode: "Markdown" });
+            
+            let statMsg = "📊 *STATISTIKA* 📊\n";
+            statMsg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+            
+            statMsg += "👥 *FOYDALANUVCHILAR*\n";
+            statMsg += `   👤 Faol: ${stats.totalUsers}\n`;
+            statMsg += `   🚫 Bloklangan: ${stats.blockedUsers}\n`;
+            statMsg += `   🚗 Avtomobillar: ${stats.totalCars}\n\n`;
+            
+            statMsg += "🔧 *DIAGNOSTIKA*\n";
+            statMsg += `   📊 Jami: ${stats.totalDiagnostics} ta\n`;
+            statMsg += `   💰 To'lovli: ${stats.paidDiagnostics} ta\n`;
+            statMsg += `   🎉 Bepul: ${stats.freeDiagnostics} ta\n`;
+            statMsg += `   💵 Diagnostika daromadi: ${stats.diagnosticIncome.toLocaleString()} so'm\n`;
+            if (stats.diagnosticAverage > 0) {
+                statMsg += `   📊 O'rtacha chek: ${Math.round(stats.diagnosticAverage).toLocaleString()} so'm\n`;
+            }
+            statMsg += "\n";
+            
+            statMsg += "🔨 *QO'SHIMCHA MEXNAT (ISHLAR)*\n";
+            statMsg += `   📊 Jami ishlar: ${stats.laborWorks} ta\n`;
+            statMsg += `   💵 Mehnat daromadi: ${stats.laborIncome.toLocaleString()} so'm\n`;
+            if (stats.laborAverage > 0) {
+                statMsg += `   📊 O'rtacha mehnat narxi: ${Math.round(stats.laborAverage).toLocaleString()} so'm\n`;
+            }
+            statMsg += "\n";
+            
+            statMsg += "💰 *JAMI DAROMAD*\n";
+            statMsg += `   💵 Umumiy: ${stats.totalIncome.toLocaleString()} so'm\n`;
+            if (stats.totalIncome > 0) {
+                statMsg += `   🔧 Diagnostika: ${stats.diagnosticIncome.toLocaleString()} so'm (${((stats.diagnosticIncome/stats.totalIncome)*100 || 0).toFixed(1)}%)\n`;
+                statMsg += `   🔨 Mehnat: ${stats.laborIncome.toLocaleString()} so'm (${((stats.laborIncome/stats.totalIncome)*100 || 0).toFixed(1)}%)\n`;
+            }
+            statMsg += "\n";
+            
+            statMsg += "📹 *VIDEO*\n";
+            statMsg += `   🎬 Videolar: ${stats.totalVideos} ta\n`;
+            statMsg += `   👁️ Ko'rishlar: ${stats.totalVideoViews} ta\n\n`;
+            
+            statMsg += "ℹ️ *TEXNIK MA'LUMOT*\n";
+            statMsg += `   ⚠️ Xatoliklar: ${stats.totalErrors}\n`;
+            statMsg += `   📌 Versiya: \`V${stats.currentVersion}\`\n`;
+            statMsg += `   📊 Yangilanishlar: ${stats.versionHistoryCount} ta\n`;
+            statMsg += `   🔑 Litsenziya ID: \`${uniqueInstallId}\`\n`;
+            statMsg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            statMsg += `© ${BOT_OWNER}`;
+            
+            await bot.sendMessage(chatId, statMsg, { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, deviceType);
         }
         else if (text === "👥 Foydalanuvchilar") {
@@ -2101,7 +2477,15 @@ bot.on("message", async (msg) => {
                 await bot.sendMessage(chatId, "📭 Diagnostikalar yo'q", { parse_mode: "Markdown" });
             } else {
                 for (const d of diags.slice(0, 10)) {
-                    await bot.sendMessage(chatId, `📅 ${formatTashkentDate(d.date)}\n🚗 ${d.carNumber}\n💰 ${d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL"}`, { parse_mode: "Markdown" });
+                    const diagPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
+                    const laborPrice = d.laborPrice || 0;
+                    let priceText = "";
+                    if (diagPrice === 0 && laborPrice === 0) priceText = "BEPUL";
+                    else if (diagPrice === 0 && laborPrice > 0) priceText = laborPrice.toLocaleString() + " so'm (mehnat)";
+                    else if (diagPrice > 0 && laborPrice === 0) priceText = diagPrice.toLocaleString() + " so'm";
+                    else priceText = (diagPrice + laborPrice).toLocaleString() + " so'm";
+                    
+                    await bot.sendMessage(chatId, `📅 ${formatTashkentDate(d.date)}\n🚗 ${d.carNumber}\n💰 ${priceText}`, { parse_mode: "Markdown" });
                 }
             }
             await sendMainMenu(chatId, true, deviceType);
@@ -2121,10 +2505,22 @@ bot.on("message", async (msg) => {
             if (diags.length === 0) {
                 msg += "📭 Bugun diagnostika yo'q";
             } else {
+                let diagIncome = 0;
+                let laborIncome = 0;
+                let freeCount = 0;
+                for (const d of diags) {
+                    const diagPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
+                    if (diagPrice > 0) diagIncome += diagPrice;
+                    else if (d.isFree) freeCount++;
+                    
+                    const laborPrice = d.laborPrice || 0;
+                    if (laborPrice > 0) laborIncome += laborPrice;
+                }
                 msg += `📊 Bugungi diagnostikalar: ${diags.length} ta\n`;
-                const todayIncome = diags.filter(d => !d.isFree).reduce((sum, d) => sum + d.price, 0);
-                msg += `💰 Bugungi daromad: ${todayIncome.toLocaleString()} so'm\n`;
-                msg += `🎉 Bepul diagnostikalar: ${diags.filter(d => d.isFree).length} ta\n`;
+                msg += `💰 Diagnostika daromadi: ${diagIncome.toLocaleString()} so'm\n`;
+                msg += `🔨 Mehnat daromadi: ${laborIncome.toLocaleString()} so'm\n`;
+                msg += `💵 Jami daromad: ${(diagIncome + laborIncome).toLocaleString()} so'm\n`;
+                msg += `🎉 Bepul diagnostikalar: ${freeCount} ta\n`;
             }
             
             await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: keyboard });
@@ -2134,7 +2530,7 @@ bot.on("message", async (msg) => {
             try {
                 const allDiagnostics = getAllDiagnostics(500);
                 const filepath = await generateDiagnosticsReport(allDiagnostics);
-                await bot.sendDocument(chatId, filepath, { caption: "📊 Diagnostika hisoboti\n📅 " + formatTashkentDateTime(new Date()) + "\n📌 Versiya: V" + currentVersion + "\n\n© " + BOT_OWNER });
+                await bot.sendDocument(chatId, filepath, { caption: "📊 Diagnostika va mehnat hisoboti\n📅 " + formatTashkentDateTime(new Date()) + "\n📌 Versiya: V" + currentVersion + "\n\n© " + BOT_OWNER });
                 setTimeout(() => fs.unlinkSync(filepath), 60000);
             } catch (error) {
                 await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
@@ -2151,7 +2547,6 @@ bot.on("message", async (msg) => {
             adminSession.data = {};
             await bot.sendMessage(chatId, "📤 *VIDEO YUKLASH*\n\nIltimos, video faylni yuboring:", { parse_mode: "Markdown" });
         }
-        // YANGI: VIDEO O'CHIRISH
         else if (text === "🗑️ Video o'chirish") {
             if (!isAdmin(userId)) return;
             await showVideoManagement(chatId);
@@ -2306,7 +2701,7 @@ bot.on("callback_query", async (query) => {
     
     const deviceType = getUserDevice(userId);
     
-    // YANGI: Video o'chirish uchun callback
+    // Video o'chirish callback
     if (data.startsWith("delete_video_")) {
         if (!isAdmin(userId)) {
             await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
@@ -2315,7 +2710,6 @@ bot.on("callback_query", async (query) => {
         
         const videoId = parseInt(data.split("_")[2]);
         
-        // Tasdiqlash uchun keyboard
         const confirmKeyboard = {
             reply_markup: {
                 inline_keyboard: [
@@ -2346,8 +2740,6 @@ bot.on("callback_query", async (query) => {
         const videoId = parseInt(data.split("_")[3]);
         const result = deleteVideo(videoId, userId);
         await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
-        
-        // O'chirishdan keyin videolar ro'yxatini yangilash
         await showVideoManagement(chatId);
         return;
     }
@@ -2439,17 +2831,35 @@ bot.on("callback_query", async (query) => {
         }
         
         for (const d of diags) {
+            const diagnosticPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
+            const laborPrice = d.laborPrice || 0;
+            
             let diagText = "📅 *" + formatTashkentDate(d.date) + "*\n";
             diagText += "🕐 " + formatTashkentTime(d.date) + "\n";
             diagText += "🚗 *" + d.carNumber + "*\n\n";
             diagText += "📝 *Bajarilgan ishlar:*\n" + d.workDescription + "\n\n";
             
+            if (laborPrice > 0 && d.laborDescription) {
+                diagText += "🔨 *Qo'shimcha mehnat:*\n";
+                diagText += "   📌 " + d.laborDescription + "\n";
+                diagText += "   💰 " + laborPrice.toLocaleString() + " so'm\n\n";
+            }
+            
             if (d.additionalNotes && d.additionalNotes !== "") {
                 diagText += "📌 *Eslatma:*\n" + d.additionalNotes + "\n\n";
             }
             
-            diagText += "💰 *Narx:* " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "🎉 BEPUL") + "\n";
-            diagText += "━━━━━━━━━━━━━━━━━━\n";
+            diagText += "💰 *Narx:* ";
+            if (diagnosticPrice === 0 && laborPrice === 0) {
+                diagText += "🎉 BEPUL (To'liq)";
+            } else if (diagnosticPrice === 0 && laborPrice > 0) {
+                diagText += laborPrice.toLocaleString() + " so'm (faqat mehnat)";
+            } else if (diagnosticPrice > 0 && laborPrice === 0) {
+                diagText += diagnosticPrice.toLocaleString() + " so'm";
+            } else {
+                diagText += (diagnosticPrice + laborPrice).toLocaleString() + " so'm";
+            }
+            diagText += "\n━━━━━━━━━━━━━━━━━━\n";
             
             await bot.sendMessage(chatId, diagText, { parse_mode: "Markdown" });
         }
@@ -2525,24 +2935,37 @@ bot.on("callback_query", async (query) => {
             await bot.sendMessage(chatId, "📭 *Bugun diagnostika yo'q*", { parse_mode: "Markdown" });
         } else {
             let msg = "📅 *BUGUNGI DIAGNOSTIKALAR*\n━━━━━━━━━━━━━━━━━━\n\n";
-            let totalIncome = 0;
+            let diagnosticIncome = 0;
+            let laborIncome = 0;
             let freeCount = 0;
             
             diags.forEach(d => {
+                const diagPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
+                const laborPrice = d.laborPrice || 0;
+                
                 msg += `🚗 ${d.carNumber}\n`;
                 msg += `📝 ${d.workDescription.substring(0, 40)}${d.workDescription.length > 40 ? "..." : ""}\n`;
-                if (d.isFree) {
-                    msg += `💰 BEPUL\n`;
+                
+                if (diagPrice === 0 && laborPrice === 0) {
+                    msg += `💰 BEPUL (To'liq)\n`;
                     freeCount++;
                 } else {
-                    msg += `💰 ${d.price.toLocaleString()} so'm\n`;
-                    totalIncome += d.price;
+                    if (diagPrice > 0) {
+                        msg += `💰 Diagnostika: ${diagPrice.toLocaleString()} so'm\n`;
+                        diagnosticIncome += diagPrice;
+                    }
+                    if (laborPrice > 0) {
+                        msg += `💰 Mehnat: ${laborPrice.toLocaleString()} so'm\n`;
+                        laborIncome += laborPrice;
+                    }
                 }
                 msg += "━━━━━━━━━━━━━━━━━━\n";
             });
             
             msg += `\n📊 *JAMI:*\n`;
-            msg += `💰 Daromad: ${totalIncome.toLocaleString()} so'm\n`;
+            msg += `💰 Diagnostika: ${diagnosticIncome.toLocaleString()} so'm\n`;
+            msg += `🔨 Mehnat: ${laborIncome.toLocaleString()} so'm\n`;
+            msg += `💵 Umumiy: ${(diagnosticIncome + laborIncome).toLocaleString()} so'm\n`;
             msg += `🔧 Diagnostika: ${diags.length} ta (${freeCount} ta bepul)\n`;
             
             await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
@@ -2552,39 +2975,48 @@ bot.on("callback_query", async (query) => {
     else if (data === "monthly_income_analysis") {
         const monthsData = getAllMonthsIncome();
         
-        if (monthsData.length === 0 || monthsData.every(m => m.diagnosticCount === 0)) {
+        if (monthsData.length === 0 || monthsData.every(m => m.totalDiagnostics === 0)) {
             await bot.sendMessage(chatId, "📭 *Hozircha daromad ma'lumotlari mavjud emas!*", { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, deviceType);
             return;
         }
         
-        let msg = "📈 *OYLIK DAROMAD TAHLILI*\n━━━━━━━━━━━━━━━━━━\n\n";
-        let totalAllIncome = 0;
-        let totalAllDiagnostics = 0;
+        let msg = "📈 *OYLIK DAROMAD TAHLILI*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        let totalYearDiagnostic = 0;
+        let totalYearLabor = 0;
+        let totalYearDiagnosticCount = 0;
+        let totalYearLaborCount = 0;
         
         for (const month of monthsData) {
-            if (month.diagnosticCount > 0) {
+            if (month.totalDiagnostics > 0) {
                 const monthName = formatMonthName(month.year, month.month);
                 msg += `📅 *${monthName}*\n`;
-                msg += `💰 Daromad: ${month.totalIncome.toLocaleString()} so'm\n`;
-                msg += `🔧 Diagnostika: ${month.diagnosticCount} ta\n`;
-                msg += `📊 O'rtacha chek: ${Math.round(month.averageCheck).toLocaleString()} so'm\n`;
-                msg += "━━━━━━━━━━━━━━━━━━\n";
-                totalAllIncome += month.totalIncome;
-                totalAllDiagnostics += month.diagnosticCount;
+                msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+                msg += `🔧 Diagnostika: ${month.diagnosticCount} ta | ${month.diagnosticIncome.toLocaleString()} so'm\n`;
+                msg += `🔨 Mehnat: ${month.laborCount} ta | ${month.laborIncome.toLocaleString()} so'm\n`;
+                msg += `🎉 Bepul: ${month.freeCount} ta\n`;
+                msg += `💰 Jami: ${month.totalIncome.toLocaleString()} so'm\n`;
+                msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+                
+                totalYearDiagnostic += month.diagnosticIncome;
+                totalYearLabor += month.laborIncome;
+                totalYearDiagnosticCount += month.diagnosticCount;
+                totalYearLaborCount += month.laborCount;
             }
         }
         
-        if (totalAllDiagnostics > 0) {
-            msg += `\n📊 *JAMI (12 oy)*\n`;
-            msg += `💰 Umumiy daromad: ${totalAllIncome.toLocaleString()} so'm\n`;
-            msg += `🔧 Jami diagnostika: ${totalAllDiagnostics} ta\n`;
-            msg += `📊 O'rtacha oylik: ${Math.round(totalAllIncome / 12).toLocaleString()} so'm\n`;
+        if (totalYearDiagnosticCount > 0 || totalYearLaborCount > 0) {
+            msg += `📊 *12 OYLIK JAMI*\n`;
+            msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+            msg += `🔧 Diagnostika: ${totalYearDiagnosticCount} ta | ${totalYearDiagnostic.toLocaleString()} so'm\n`;
+            msg += `🔨 Mehnat: ${totalYearLaborCount} ta | ${totalYearLabor.toLocaleString()} so'm\n`;
+            msg += `💰 Umumiy daromad: ${(totalYearDiagnostic + totalYearLabor).toLocaleString()} so'm\n`;
         }
         
         const keyboard = {
             inline_keyboard: [
                 [{ text: "📊 Batafsil statistika", callback_data: "detailed_monthly_stats" }],
+                [{ text: "📅 Yillik tahlil", callback_data: "yearly_income_analysis" }],
                 [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
             ]
         };
@@ -2600,16 +3032,19 @@ bot.on("callback_query", async (query) => {
             return;
         }
         
-        let msg = "📅 *YILLIK DAROMAD TAHLILI*\n━━━━━━━━━━━━━━━━━━\n\n";
+        let msg = "📅 *YILLIK DAROMAD TAHLILI*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
         
         for (const year of years) {
             const yearData = getYearlyIncome(year);
             if (yearData.totalDiagnostics > 0) {
                 msg += `📌 *${year}-YIL*\n`;
+                msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+                msg += `🔧 Diagnostika daromadi: ${yearData.diagnosticIncome.toLocaleString()} so'm\n`;
+                msg += `🔨 Mehnat daromadi: ${yearData.laborIncome.toLocaleString()} so'm\n`;
                 msg += `💰 Umumiy daromad: ${yearData.totalIncome.toLocaleString()} so'm\n`;
-                msg += `🔧 Jami diagnostika: ${yearData.totalDiagnostics} ta\n`;
+                msg += `📊 Jami diagnostika: ${yearData.totalDiagnostics} ta\n`;
                 msg += `📊 O'rtacha oylik: ${Math.round(yearData.averageMonthlyIncome).toLocaleString()} so'm\n`;
-                msg += "━━━━━━━━━━━━━━━━━━\n";
+                msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
             }
         }
         
@@ -2625,17 +3060,21 @@ bot.on("callback_query", async (query) => {
     else if (data === "detailed_monthly_stats") {
         const monthsData = getAllMonthsIncome();
         
-        let msg = "📊 *BATAFSIL OYLIK STATISTIKA*\n━━━━━━━━━━━━━━━━━━\n\n";
+        let msg = "📊 *BATAFSIL OYLIK STATISTIKA*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
         
         for (const month of monthsData) {
-            if (month.diagnosticCount > 0) {
+            if (month.totalDiagnostics > 0) {
                 const monthName = formatMonthName(month.year, month.month);
-                const barLength = Math.min(30, Math.floor(month.totalIncome / 1000000));
+                const maxValue = Math.max(...monthsData.map(m => m.totalIncome), 1);
+                const barLength = Math.min(30, Math.floor((month.totalIncome / maxValue) * 30));
                 const bar = "█".repeat(barLength) + "░".repeat(30 - barLength);
+                
                 msg += `📅 *${monthName}*\n`;
-                msg += `💰 ${month.totalIncome.toLocaleString()} so'm\n`;
+                msg += `🔧 Diagnostika: ${month.diagnosticIncome.toLocaleString()} so'm\n`;
+                msg += `🔨 Mehnat: ${month.laborIncome.toLocaleString()} so'm\n`;
+                msg += `💰 Jami: ${month.totalIncome.toLocaleString()} so'm\n`;
                 msg += `${bar}\n`;
-                msg += "━━━━━━━━━━━━━━━━━━\n";
+                msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
             }
         }
         
@@ -2990,7 +3429,6 @@ console.log("🚗 ISUZU DOCTOR BOT ISHGA TUSHDI");
 console.log("=".repeat(60));
 console.log("📌 Versiya: V" + currentVersion);
 console.log("⚠️ Versiya FAQAT kod o'zgarganda yangilanadi!");
-console.log("💬 Xabarlar 'o'qilgan' bo'lib ketmasligi uchun sendChatAction qo'shilgan!");
 console.log("👑 Adminlar: " + ADMIN_IDS.join(", "));
 console.log("👥 Foydalanuvchilar: " + users.filter(u => !u.isAdmin).length);
 console.log("🔧 Diagnostikalar: " + diagnostics.length);
@@ -2999,6 +3437,8 @@ console.log("💳 Karta: " + CARD_NUMBER);
 console.log("📊 Yangilanishlar soni: " + versionHistory.length);
 console.log("💾 Volume manzili: " + VOLUME_PATH);
 console.log("🔑 Litsenziya ID: " + uniqueInstallId);
+console.log("💰 Diagnostika narxi: " + DIAGNOSTIC_PRICE.toLocaleString() + " so'm");
+console.log("🔨 Qo'shimcha mehnat narxi: Admin tomonidan kiritiladi");
 console.log("© Muallif: " + BOT_OWNER);
 console.log("=".repeat(60));
 console.log("✅ Bot ishlashga tayyor!");
