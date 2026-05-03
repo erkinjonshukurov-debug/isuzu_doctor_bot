@@ -428,7 +428,6 @@ function loadData() {
         
         if (fs.existsSync(DIAGNOSTICS_FILE)) {
             diagnostics = JSON.parse(fs.readFileSync(DIAGNOSTICS_FILE, "utf8"));
-            // Eski ma'lumotlarni yangilash
             diagnostics.forEach(d => {
                 if (d.diagnosticPrice === undefined) {
                     d.diagnosticPrice = d.isFree ? 0 : DIAGNOSTIC_PRICE;
@@ -780,7 +779,7 @@ function addCarToUser(phoneNumber, carNumber, userInfo = {}) {
     return { success: true, message: "Yangi avtomobil qo'shildi!", carsCount: user.cars.length };
 }
 
-// ======================== YANGILANGAN DIAGNOSTIKA FUNKSIYASI ========================
+// ======================== DIAGNOSTIKA FUNKSIYASI (YANGILANGAN) ========================
 function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalNotes, extraWorkPrice = 0, extraWorkDescription = "") {
     const user = getUserByPhone(phoneNumber);
     if (!user) return { success: false, message: "Foydalanuvchi topilmadi" };
@@ -794,7 +793,6 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
     let newFreeDiagnostics = car.freeDiagnostics;
     let finalBasePrice = DIAGNOSTIC_PRICE;
     
-    // Bepul diagnostika tekshiruvi (faqat asosiy diagnostika uchun)
     if (car.freeDiagnostics > 0) {
         isFree = true;
         newFreeDiagnostics--;
@@ -810,7 +808,6 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
         }
     }
     
-    // Qo'shimcha ish narxi (har doim pulli, hatto diagnostika bepul bo'lsa ham)
     const laborPrice = extraWorkPrice || 0;
     const totalPrice = finalBasePrice + laborPrice;
     
@@ -822,17 +819,15 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
         date: new Date().toISOString(),
         workDescription: workDescription,
         additionalNotes: additionalNotes || "",
-        // ALOHIDA HISOB UCHUN YANGI MAYDONLAR:
-        diagnosticPrice: finalBasePrice,      // Faqat diagnostika puli
-        laborPrice: laborPrice,               // Faqat qo'shimcha mehnat puli
+        diagnosticPrice: finalBasePrice,
+        laborPrice: laborPrice,
         laborDescription: extraWorkDescription || "",
-        totalPrice: totalPrice,               // Jami
+        totalPrice: totalPrice,
         isFree: isFree
     };
     diagnostics.push(diagnostic);
     saveDiagnostics();
     
-    // Bonuslarni yangilash (faqat pullik diagnostika uchun)
     if (!isFree) {
         car.bonusCount = newBonusCount;
         car.freeDiagnostics = newFreeDiagnostics;
@@ -848,16 +843,6 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
     saveUsers();
     addVersionRecord(currentVersion, "Diagnostika qo'shildi: " + carNumber, user.userId);
     
-    // Bonus xabarini yangilash
-    let finalBonusMessage = bonusMessage;
-    if (laborPrice > 0) {
-        if (isFree) {
-            finalBonusMessage = `🎉 BEPUL diagnostika!\n\n💰 Qo'shimcha mehnat narxi: ${laborPrice.toLocaleString()} so'm\n🔧 Bajarilgan qo'shimcha ish: ${extraWorkDescription}`;
-        } else {
-            finalBonusMessage += `\n\n💰 Qo'shimcha mehnat narxi: ${laborPrice.toLocaleString()} so'm\n🔧 Qo'shimcha ish: ${extraWorkDescription}`;
-        }
-    }
-    
     return {
         success: true,
         isFree: isFree,
@@ -866,13 +851,13 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
         totalPrice: totalPrice,
         newBonusCount: newBonusCount,
         newFreeDiagnostics: newFreeDiagnostics,
-        bonusMessage: finalBonusMessage,
+        bonusMessage: bonusMessage,
         carNumber: carNumber,
         laborDescription: extraWorkDescription
     };
 }
 
-// ======================== YANGILANGAN STATISTIKA FUNKSIYASI ========================
+// ======================== STATISTIKA FUNKSIYASI ========================
 function getStatistics() {
     const regularUsers = users.filter(u => !u.isAdmin);
     const blockedUsers = users.filter(u => !u.isAdmin && u.isBlocked === true);
@@ -883,15 +868,13 @@ function getStatistics() {
         totalCars += user.cars.length;
     }
     
-    // ALOHIDA HISOBLASH
-    let totalDiagnosticIncome = 0;   // Faqat diagnostika puli
-    let totalLaborIncome = 0;         // Faqat mehnat puli
+    let totalDiagnosticIncome = 0;
+    let totalLaborIncome = 0;
     let freeDiagnosticCount = 0;
     let laborWorkCount = 0;
     let paidDiagnosticCount = 0;
     
     for (const d of diagnostics) {
-        // Diagnostika puli
         const diagPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
         if (diagPrice > 0) {
             totalDiagnosticIncome += diagPrice;
@@ -900,7 +883,6 @@ function getStatistics() {
             freeDiagnosticCount++;
         }
         
-        // Mehnat puli (qo'shimcha ish)
         const laborPrice = d.laborPrice || 0;
         if (laborPrice > 0) {
             totalLaborIncome += laborPrice;
@@ -911,27 +893,18 @@ function getStatistics() {
     const totalIncome = totalDiagnosticIncome + totalLaborIncome;
     
     return {
-        // Asosiy statistika
         totalUsers: activeUsers.length,
         blockedUsers: blockedUsers.length,
         totalCars: totalCars,
-        
-        // Diagnostika statistikasi
         totalDiagnostics: diagnostics.length,
         paidDiagnostics: paidDiagnosticCount,
         freeDiagnostics: freeDiagnosticCount,
         diagnosticIncome: totalDiagnosticIncome,
         diagnosticAverage: paidDiagnosticCount > 0 ? totalDiagnosticIncome / paidDiagnosticCount : 0,
-        
-        // Mehnat (qo'shimcha ish) statistikasi
         laborWorks: laborWorkCount,
         laborIncome: totalLaborIncome,
         laborAverage: laborWorkCount > 0 ? totalLaborIncome / laborWorkCount : 0,
-        
-        // Jami
         totalIncome: totalIncome,
-        
-        // Boshqa ma'lumotlar
         totalErrors: errors.length,
         currentVersion: currentVersion,
         totalVideos: videoList.length,
@@ -940,7 +913,7 @@ function getStatistics() {
     };
 }
 
-// ======================== YANGILANGAN HISOBOT FUNKSIYASI ========================
+// ======================== HISOBOT FUNKSIYASI ========================
 async function generateDiagnosticsReport(diagnosticsList) {
     return new Promise((resolve, reject) => {
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
@@ -954,7 +927,6 @@ async function generateDiagnosticsReport(diagnosticsList) {
         content += "Yaratilgan sana: " + formatTashkentDateTime(new Date()) + "\n";
         content += "Jami diagnostikalar: " + diagnosticsList.length + " ta\n\n";
         
-        // STATISTIKA
         let totalDiagnosticIncome = 0;
         let totalLaborIncome = 0;
         let freeCount = 0;
@@ -1021,7 +993,6 @@ async function generateDiagnosticsReport(diagnosticsList) {
             content += `🚗 Avtomobil raqami: ${diag.carNumber}\n`;
             content += `👤 Telefon: ${diag.phoneNumber}\n`;
             content += "\n";
-            
             content += "📝 ASOSIY BAJARILGAN ISHLAR:\n";
             content += `   ${diag.workDescription}\n\n`;
             
@@ -1069,7 +1040,7 @@ async function generateDiagnosticsReport(diagnosticsList) {
     });
 }
 
-// ======================== OYLIK DAROMAD TAHLILI (YANGILANGAN) ========================
+// ======================== OYLIK DAROMAD TAHLILI ========================
 function getMonthlyDetailedIncome(year, month) {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0);
@@ -1496,6 +1467,43 @@ const bot = new TelegramBot(BOT_TOKEN, {
 });
 bot.deleteWebHook().catch(e => console.log("Webhook xatolik:", e.message));
 
+// -------------------- DIAGNOSTIKA XABARINI FORMATLASH FUNKSIYASI --------------------
+function formatDiagnosticMessage(diagnostic, includePhone = false, isForUser = true) {
+    const diagnosticPrice = diagnostic.diagnosticPrice !== undefined ? diagnostic.diagnosticPrice : (diagnostic.isFree ? 0 : DIAGNOSTIC_PRICE);
+    const laborPrice = diagnostic.laborPrice || 0;
+    const laborDesc = diagnostic.laborDescription || "";
+    const totalPrice = diagnosticPrice + laborPrice;
+    
+    let msg = "🔧 *DIAGNOSTIKA NATIJALARI*\n\n";
+    msg += "🚗 *" + diagnostic.carNumber + "*\n";
+    msg += "📅 " + formatTashkentDate(diagnostic.date) + "\n";
+    msg += "🕐 " + formatTashkentTime(diagnostic.date) + "\n\n";
+    
+    if (includePhone && diagnostic.phoneNumber) {
+        msg += "👤 " + diagnostic.phoneNumber + "\n\n";
+    }
+    
+    msg += "📝 *Bajarilgan ishlar:*\n" + diagnostic.workDescription + "\n\n";
+    
+    if (diagnostic.additionalNotes && diagnostic.additionalNotes !== "") {
+        msg += "📌 *Eslatma:*\n" + diagnostic.additionalNotes + "\n\n";
+    }
+    
+    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    msg += "💰 *NARXLAR:*\n";
+    msg += "   🔧 Diagnostika: " + (diagnosticPrice > 0 ? diagnosticPrice.toLocaleString() + " so'm" : "BEPUL") + "\n";
+    if (laborPrice > 0) {
+        msg += "   🔨 Qo'shimcha mehnat: " + laborPrice.toLocaleString() + " so'm\n";
+        if (laborDesc) {
+            msg += "   📝 " + laborDesc + "\n";
+        }
+    }
+    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    msg += "💰 *JAMI:* " + totalPrice.toLocaleString() + " so'm\n";
+    
+    return msg;
+}
+
 // ======================== BOT HANDLERLARI ========================
 
 // -------------------- /start KOMANDASI --------------------
@@ -1825,37 +1833,8 @@ bot.onText(/\/history/, async (msg) => {
     
     await sendReminder(chatId);
     for (const d of diags) {
-        const diagnosticPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
-        const laborPrice = d.laborPrice || 0;
-        
-        let diagText = "📅 *" + formatTashkentDate(d.date) + "*\n";
-        diagText += "🕐 " + formatTashkentTime(d.date) + "\n";
-        diagText += "🚗 *" + d.carNumber + "*\n\n";
-        diagText += "📝 *Bajarilgan ishlar:*\n" + d.workDescription + "\n\n";
-        
-        if (laborPrice > 0 && d.laborDescription) {
-            diagText += "🔨 *Qo'shimcha mehnat:*\n";
-            diagText += "   📌 " + d.laborDescription + "\n";
-            diagText += "   💰 " + laborPrice.toLocaleString() + " so'm\n\n";
-        }
-        
-        if (d.additionalNotes && d.additionalNotes !== "") {
-            diagText += "📌 *Eslatma:*\n" + d.additionalNotes + "\n\n";
-        }
-        
-        diagText += "💰 *Narx:* ";
-        if (diagnosticPrice === 0 && laborPrice === 0) {
-            diagText += "🎉 BEPUL (To'liq)";
-        } else if (diagnosticPrice === 0 && laborPrice > 0) {
-            diagText += laborPrice.toLocaleString() + " so'm (faqat mehnat uchun)";
-        } else if (diagnosticPrice > 0 && laborPrice === 0) {
-            diagText += diagnosticPrice.toLocaleString() + " so'm";
-        } else {
-            diagText += (diagnosticPrice + laborPrice).toLocaleString() + " so'm (Diagnostika: " + diagnosticPrice.toLocaleString() + " + Mehnat: " + laborPrice.toLocaleString() + ")";
-        }
-        diagText += "\n━━━━━━━━━━━━━━━━━━\n";
-        
-        await bot.sendMessage(chatId, diagText, { parse_mode: "Markdown" });
+        const msgText = formatDiagnosticMessage(d, false, true);
+        await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
     }
     await sendMainMenu(chatId, isAdmin(userId), getUserDevice(userId));
 });
@@ -2162,7 +2141,7 @@ bot.on("message", async (msg) => {
         return;
     }
     
-    // ======================== ADMIN DIAGNOSTIKA QO'SHISH (YANGILANGAN) ========================
+    // ======================== ADMIN DIAGNOSTIKA QO'SHISH ========================
     if (session.step === "admin_add_diagnostic") {
         if (!isAdmin(userId)) {
             clearUserSession(userId);
@@ -2252,7 +2231,7 @@ bot.on("message", async (msg) => {
         
         session.data.extraWorkPrice = price;
         session.step = "admin_extra_work_description";
-        await bot.sendMessage(chatId, "✅ Narx qabul qilindi: " + price.toLocaleString() + " so'm\n\n🔧 *Qo'shimcha mehnat (ish) tavsifini kiriting:*\n\nMasalan: 'Moy almashtirish', 'Filtr tozalash', 'G'ildiraklarni balanslash' va hokazo\n\n❌ Bekor qilish: /cancel", { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, "✅ Narx qabul qilindi: " + price.toLocaleString() + " so'm\n\n🔧 *Qo'shimcha mehnat (ish) tavsifini kiriting:*\n\nMasalan: 'Moy almashtirish', 'Filtr tozalash'\n\n❌ Bekor qilish: /cancel", { parse_mode: "Markdown" });
         return;
     }
     
@@ -2285,7 +2264,6 @@ bot.on("message", async (msg) => {
         
         session.data.additionalNotes = text || "";
         
-        // Diagnostikani qo'shish
         const result = addDiagnosticToCar(
             session.data.targetUser.phone,
             session.data.targetCar.carNumber,
@@ -2299,6 +2277,14 @@ bot.on("message", async (msg) => {
         let adminResponse = "🔧 *DIAGNOSTIKA QO'SHILDI*\n\n";
         adminResponse += "👤 " + (session.data.targetUser.fullName || "Ismsiz") + "\n";
         adminResponse += "🚗 " + result.carNumber + "\n";
+        adminResponse += "📅 " + formatTashkentDate(new Date()) + "\n";
+        adminResponse += "🕐 " + formatTashkentTime(new Date()) + "\n\n";
+        adminResponse += "📝 *Asosiy bajarilgan ishlar:*\n" + session.data.workDescription + "\n\n";
+        
+        if (session.data.additionalNotes && session.data.additionalNotes !== "") {
+            adminResponse += "📌 *Eslatma:*\n" + session.data.additionalNotes + "\n\n";
+        }
+        
         adminResponse += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
         adminResponse += "💰 *NARXLAR:*\n";
         adminResponse += "   🔧 Diagnostika: " + (result.diagnosticPrice > 0 ? result.diagnosticPrice.toLocaleString() + " so'm" : "BEPUL") + "\n";
@@ -2317,31 +2303,24 @@ bot.on("message", async (msg) => {
         userMsg += "🚗 *" + result.carNumber + "*\n";
         userMsg += "📅 " + formatTashkentDate(new Date()) + "\n";
         userMsg += "🕐 " + formatTashkentTime(new Date()) + "\n\n";
-        userMsg += "📝 *Asosiy bajarilgan ishlar:*\n" + session.data.workDescription + "\n\n";
-        
-        if (session.data.extraWorkDescription && session.data.extraWorkPrice > 0) {
-            userMsg += "🔨 *Qo'shimcha mehnat:*\n";
-            userMsg += "   📌 " + session.data.extraWorkDescription + "\n";
-            userMsg += "   💰 " + session.data.extraWorkPrice.toLocaleString() + " so'm\n\n";
-        }
+        userMsg += "📝 *Bajarilgan ishlar:*\n" + session.data.workDescription + "\n\n";
         
         if (session.data.additionalNotes && session.data.additionalNotes !== "") {
             userMsg += "📌 *Eslatma:*\n" + session.data.additionalNotes + "\n\n";
         }
         
-        userMsg += "💰 *Narx:* ";
-        if (result.isFree && result.laborPrice === 0) {
-            userMsg += "🎉 BEPUL (To'liq)";
-        } else if (result.isFree && result.laborPrice > 0) {
-            userMsg += result.laborPrice.toLocaleString() + " so'm (faqat mehnat uchun)";
-        } else if (!result.isFree && result.laborPrice === 0) {
-            userMsg += result.diagnosticPrice.toLocaleString() + " so'm";
-        } else {
-            userMsg += result.totalPrice.toLocaleString() + " so'm (Diagnostika: " + result.diagnosticPrice.toLocaleString() + " + Mehnat: " + result.laborPrice.toLocaleString() + ")";
+        userMsg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        userMsg += "💰 *NARXLAR:*\n";
+        userMsg += "   🔧 Diagnostika: " + (result.diagnosticPrice > 0 ? result.diagnosticPrice.toLocaleString() + " so'm" : "BEPUL") + "\n";
+        if (result.laborPrice > 0) {
+            userMsg += "   🔨 Qo'shimcha mehnat: " + result.laborPrice.toLocaleString() + " so'm\n";
+            userMsg += "   📝 " + session.data.extraWorkDescription + "\n";
         }
-        userMsg += "\n\n" + result.bonusMessage;
+        userMsg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        userMsg += "💰 *JAMI:* " + result.totalPrice.toLocaleString() + " so'm\n\n";
+        userMsg += result.bonusMessage;
         
-        bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: "Markdown" }).catch(() => {});
+        await bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: "Markdown" }).catch(() => {});
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, deviceType);
@@ -2477,15 +2456,8 @@ bot.on("message", async (msg) => {
                 await bot.sendMessage(chatId, "📭 Diagnostikalar yo'q", { parse_mode: "Markdown" });
             } else {
                 for (const d of diags.slice(0, 10)) {
-                    const diagPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
-                    const laborPrice = d.laborPrice || 0;
-                    let priceText = "";
-                    if (diagPrice === 0 && laborPrice === 0) priceText = "BEPUL";
-                    else if (diagPrice === 0 && laborPrice > 0) priceText = laborPrice.toLocaleString() + " so'm (mehnat)";
-                    else if (diagPrice > 0 && laborPrice === 0) priceText = diagPrice.toLocaleString() + " so'm";
-                    else priceText = (diagPrice + laborPrice).toLocaleString() + " so'm";
-                    
-                    await bot.sendMessage(chatId, `📅 ${formatTashkentDate(d.date)}\n🚗 ${d.carNumber}\n💰 ${priceText}`, { parse_mode: "Markdown" });
+                    const msgText = formatDiagnosticMessage(d, true, false);
+                    await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
                 }
             }
             await sendMainMenu(chatId, true, deviceType);
@@ -2508,17 +2480,22 @@ bot.on("message", async (msg) => {
                 let diagIncome = 0;
                 let laborIncome = 0;
                 let freeCount = 0;
+                let laborCount = 0;
+                
                 for (const d of diags) {
                     const diagPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
                     if (diagPrice > 0) diagIncome += diagPrice;
                     else if (d.isFree) freeCount++;
                     
                     const laborPrice = d.laborPrice || 0;
-                    if (laborPrice > 0) laborIncome += laborPrice;
+                    if (laborPrice > 0) {
+                        laborIncome += laborPrice;
+                        laborCount++;
+                    }
                 }
                 msg += `📊 Bugungi diagnostikalar: ${diags.length} ta\n`;
                 msg += `💰 Diagnostika daromadi: ${diagIncome.toLocaleString()} so'm\n`;
-                msg += `🔨 Mehnat daromadi: ${laborIncome.toLocaleString()} so'm\n`;
+                msg += `🔨 Mehnat daromadi: ${laborIncome.toLocaleString()} so'm (${laborCount} ta ish)\n`;
                 msg += `💵 Jami daromad: ${(diagIncome + laborIncome).toLocaleString()} so'm\n`;
                 msg += `🎉 Bepul diagnostikalar: ${freeCount} ta\n`;
             }
@@ -2831,37 +2808,8 @@ bot.on("callback_query", async (query) => {
         }
         
         for (const d of diags) {
-            const diagnosticPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
-            const laborPrice = d.laborPrice || 0;
-            
-            let diagText = "📅 *" + formatTashkentDate(d.date) + "*\n";
-            diagText += "🕐 " + formatTashkentTime(d.date) + "\n";
-            diagText += "🚗 *" + d.carNumber + "*\n\n";
-            diagText += "📝 *Bajarilgan ishlar:*\n" + d.workDescription + "\n\n";
-            
-            if (laborPrice > 0 && d.laborDescription) {
-                diagText += "🔨 *Qo'shimcha mehnat:*\n";
-                diagText += "   📌 " + d.laborDescription + "\n";
-                diagText += "   💰 " + laborPrice.toLocaleString() + " so'm\n\n";
-            }
-            
-            if (d.additionalNotes && d.additionalNotes !== "") {
-                diagText += "📌 *Eslatma:*\n" + d.additionalNotes + "\n\n";
-            }
-            
-            diagText += "💰 *Narx:* ";
-            if (diagnosticPrice === 0 && laborPrice === 0) {
-                diagText += "🎉 BEPUL (To'liq)";
-            } else if (diagnosticPrice === 0 && laborPrice > 0) {
-                diagText += laborPrice.toLocaleString() + " so'm (faqat mehnat)";
-            } else if (diagnosticPrice > 0 && laborPrice === 0) {
-                diagText += diagnosticPrice.toLocaleString() + " so'm";
-            } else {
-                diagText += (diagnosticPrice + laborPrice).toLocaleString() + " so'm";
-            }
-            diagText += "\n━━━━━━━━━━━━━━━━━━\n";
-            
-            await bot.sendMessage(chatId, diagText, { parse_mode: "Markdown" });
+            const msgText = formatDiagnosticMessage(d, false, true);
+            await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
         }
         await sendMainMenu(chatId, false, deviceType);
     }
@@ -2939,28 +2887,17 @@ bot.on("callback_query", async (query) => {
             let laborIncome = 0;
             let freeCount = 0;
             
-            diags.forEach(d => {
+            for (const d of diags) {
+                const msgText = formatDiagnosticMessage(d, true, false);
+                await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
+                
                 const diagPrice = d.diagnosticPrice !== undefined ? d.diagnosticPrice : (d.isFree ? 0 : DIAGNOSTIC_PRICE);
+                if (diagPrice > 0) diagnosticIncome += diagPrice;
+                else if (d.isFree) freeCount++;
+                
                 const laborPrice = d.laborPrice || 0;
-                
-                msg += `🚗 ${d.carNumber}\n`;
-                msg += `📝 ${d.workDescription.substring(0, 40)}${d.workDescription.length > 40 ? "..." : ""}\n`;
-                
-                if (diagPrice === 0 && laborPrice === 0) {
-                    msg += `💰 BEPUL (To'liq)\n`;
-                    freeCount++;
-                } else {
-                    if (diagPrice > 0) {
-                        msg += `💰 Diagnostika: ${diagPrice.toLocaleString()} so'm\n`;
-                        diagnosticIncome += diagPrice;
-                    }
-                    if (laborPrice > 0) {
-                        msg += `💰 Mehnat: ${laborPrice.toLocaleString()} so'm\n`;
-                        laborIncome += laborPrice;
-                    }
-                }
-                msg += "━━━━━━━━━━━━━━━━━━\n";
-            });
+                if (laborPrice > 0) laborIncome += laborPrice;
+            }
             
             msg += `\n📊 *JAMI:*\n`;
             msg += `💰 Diagnostika: ${diagnosticIncome.toLocaleString()} so'm\n`;
