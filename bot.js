@@ -12,6 +12,7 @@ const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
 // ======================== VERSIYA TIZIMI ========================
 let currentVersion = "2.1";
 
+// VERSIYANI OSHIRISH - FAQAT KOD O'ZGARGANDA!
 function incrementVersion() {
     const parts = currentVersion.split('.');
     const major = parts[0];
@@ -100,13 +101,6 @@ let adminSettings = {
     securityLog: []
 };
 
-// Xabar statistikasi uchun
-let messageStats = {
-    totalSent: 0,
-    totalRead: 0,
-    messages: [] // { id, text, sentDate, readBy: [] }
-};
-
 const DIAGNOSTIC_PRICE = 250000;
 const MAX_CARS_PER_USER = 20;
 
@@ -123,70 +117,6 @@ const VERSION_FILE = path.join(VOLUME_PATH, 'version.json');
 const ADMIN_SETTINGS_FILE = path.join(VOLUME_PATH, 'admin_settings.json');
 const VIDEOS_FILE = path.join(VOLUME_PATH, 'videos.json');
 const VERSION_HISTORY_FILE = path.join(VOLUME_PATH, 'version_history.json');
-const MESSAGE_STATS_FILE = path.join(VOLUME_PATH, 'message_stats.json');
-
-// -------------------- XABAR STATISTIKASINI YUKLASH/SAQLASH --------------------
-function loadMessageStats() {
-    try {
-        if (fs.existsSync(MESSAGE_STATS_FILE)) {
-            messageStats = JSON.parse(fs.readFileSync(MESSAGE_STATS_FILE, "utf8"));
-        } else {
-            messageStats = { totalSent: 0, totalRead: 0, messages: [] };
-            saveMessageStats();
-        }
-        console.log("✅ Xabar statistikasi yuklandi");
-    } catch (err) {
-        console.error("Xabar statistikasini yuklashda xatolik:", err);
-        messageStats = { totalSent: 0, totalRead: 0, messages: [] };
-    }
-}
-
-function saveMessageStats() {
-    fs.writeFileSync(MESSAGE_STATS_FILE, JSON.stringify(messageStats, null, 2));
-}
-
-function addMessageRecord(text, adminId) {
-    const record = {
-        id: Date.now(),
-        text: text.substring(0, 100),
-        adminId: adminId,
-        sentDate: new Date().toISOString(),
-        readBy: [],
-        readCount: 0
-    };
-    messageStats.messages.unshift(record);
-    if (messageStats.messages.length > 50) {
-        messageStats.messages = messageStats.messages.slice(0, 50);
-    }
-    messageStats.totalSent++;
-    saveMessageStats();
-    return record;
-}
-
-function markMessageAsRead(messageId, userId) {
-    const message = messageStats.messages.find(m => m.id === messageId);
-    if (message && !message.readBy.includes(userId)) {
-        message.readBy.push(userId);
-        message.readCount = message.readBy.length;
-        messageStats.totalRead++;
-        saveMessageStats();
-        return true;
-    }
-    return false;
-}
-
-function getMessageStats() {
-    const messages = messageStats.messages.map(m => ({
-        ...m,
-        readPercentage: m.readBy.length > 0 ? Math.round((m.readBy.length / (messageStats.totalSent || 1)) * 100) : 0
-    }));
-    return {
-        totalSent: messageStats.totalSent,
-        totalRead: messageStats.totalRead,
-        readPercentage: messageStats.totalSent > 0 ? Math.round((messageStats.totalRead / messageStats.totalSent) * 100) : 0,
-        messages: messages.slice(0, 10)
-    };
-}
 
 // -------------------- VERSIYA TARIXI --------------------
 let versionHistory = [];
@@ -210,6 +140,7 @@ function saveVersionHistory() {
     fs.writeFileSync(VERSION_HISTORY_FILE, JSON.stringify(versionHistory, null, 2));
 }
 
+// VERSIYA TARIXIGA YOZISH - VERSIYA O'ZGARMAYDI!
 function addVersionRecord(version, changes, adminId) {
     const record = {
         id: Date.now(),
@@ -227,6 +158,7 @@ function addVersionRecord(version, changes, adminId) {
     return record;
 }
 
+// KOD O'ZGARGANDA VERSIYANI YANGILASH (ADMIN QO'LDAN)
 function updateBotVersion(newVersion, changes, adminId) {
     currentVersion = newVersion;
     saveVersion();
@@ -385,6 +317,7 @@ function getActiveVideos() {
     return videoList.filter(v => v.isActive);
 }
 
+// ========== YANGI: VIDEO O'CHIRISH FUNKSIYASI ==========
 function deleteVideo(videoId, adminId) {
     const videoIndex = videoList.findIndex(v => v.id === videoId);
     if (videoIndex === -1) {
@@ -403,8 +336,9 @@ function deleteVideo(videoId, adminId) {
     return { success: true, message: "Video muvaffaqiyatli o'chirildi: " + videoTitle };
 }
 
+// Admin uchun videolarni boshqarish paneli (o'chirish uchun)
 async function showVideoManagement(chatId, page = 0) {
-    const allVideos = videoList.filter(v => v.isActive);
+    const allVideos = videoList.filter(v => v.isActive); // Faqat faol videolar
     const itemsPerPage = 5;
     const start = page * itemsPerPage;
     const end = start + itemsPerPage;
@@ -561,7 +495,7 @@ function saveVersion() {
     fs.writeFileSync(VERSION_FILE, JSON.stringify(versionData, null, 2));
 }
 
-// -------------------- BACKUP FUNKSIYALARI --------------------
+// -------------------- BACKUP FUNKSIYALARI (VERSIYA O'ZGARMAYDI) --------------------
 function createBackup() {
     ensureVolumeDir();
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
@@ -577,9 +511,6 @@ function createBackup() {
     }
     if (fs.existsSync(VIDEOS_FILE)) {
         fs.copyFileSync(VIDEOS_FILE, path.join(BACKUP_DIR, "videos_backup_" + timestamp + ".json"));
-    }
-    if (fs.existsSync(MESSAGE_STATS_FILE)) {
-        fs.copyFileSync(MESSAGE_STATS_FILE, path.join(BACKUP_DIR, "message_stats_backup_" + timestamp + ".json"));
     }
     
     const backups = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith(".json"));
@@ -953,7 +884,6 @@ function getStatistics() {
     
     const paidDiagnostics = diagnostics.filter(d => !d.isFree);
     const totalIncome = paidDiagnostics.reduce((sum, d) => sum + d.price, 0);
-    const msgStats = getMessageStats();
     
     return {
         totalUsers: activeUsers.length,
@@ -967,9 +897,7 @@ function getStatistics() {
         currentVersion: currentVersion,
         totalVideos: videoList.length,
         totalVideoViews: videoList.reduce((sum, v) => sum + (v.views || 0), 0),
-        versionHistoryCount: versionHistory.length,
-        totalMessagesSent: msgStats.totalSent,
-        messagesReadPercentage: msgStats.readPercentage
+        versionHistoryCount: versionHistory.length
     };
 }
 
@@ -1129,44 +1057,32 @@ async function generateDiagnosticsReport(diagnosticsList) {
 }
 
 // -------------------- XABAR YUBORISH (TO'G'RILANGAN) --------------------
-async function sendNotificationToAllUsers(message, adminId, keyboard = null) {
+async function sendNotificationToAllUsers(message, keyboard = null) {
     const activeUsers = users.filter(u => !u.isAdmin && !u.isBlocked);
     let successCount = 0;
     let failCount = 0;
     
-    // Xabar statistikasiga yozish
-    const messageRecord = addMessageRecord(message, adminId);
-    const messageId = messageRecord.id;
-    
     for (const user of activeUsers) {
         try {
-            // Xabarni yuborish - disable_notification: false qilib
+            await bot.sendChatAction(user.userId, "typing");
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
             await bot.sendMessage(user.userId, message, {
                 parse_mode: "Markdown",
                 reply_markup: keyboard,
-                disable_notification: false,  // ✅ Bildirishnoma yuboradi
+                disable_notification: false,
                 disable_web_page_preview: false,
                 protect_content: false
             });
             successCount++;
-            // Rate limit uchun kichik pauza
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 100));
         } catch (error) {
             failCount++;
             console.error(`Xabar yuborilmadi (${user.userId}):`, error.message);
         }
     }
     
-    // Xabar statistikasini yangilash
-    const msgIndex = messageStats.messages.findIndex(m => m.id === messageId);
-    if (msgIndex !== -1) {
-        messageStats.messages[msgIndex].totalRecipients = successCount;
-        saveMessageStats();
-    }
-    
-    addSecurityLog("SEND_NOTIFICATION", adminId, `Xabar yuborildi: ${successCount} ta foydalanuvchiga`);
-    
-    return { success: successCount, fail: failCount, messageId: messageId };
+    return { success: successCount, fail: failCount };
 }
 
 async function sendReminder(chatId) {
@@ -1205,8 +1121,7 @@ function getAdminReplyKeyboard() {
         ["🗑️ Video o'chirish", "💾 Backup"],
         ["🔄 Tiklash", "🚫 Foyd. boshqarish"],
         ["🔐 Xavfsizlik", "📌 Versiya"],
-        ["📢 Xabar yuborish", "📊 Xabar statistikasi"],
-        ["❌ Asosiy menyu"]
+        ["📢 Xabar yuborish", "❌ Asosiy menyu"]
     ];
     
     return {
@@ -1389,39 +1304,6 @@ async function showUsersList(chatId, page, messageId = null) {
     }
 }
 
-// -------------------- XABAR STATISTIKASINI KO'RSATISH --------------------
-async function showMessageStats(chatId) {
-    const stats = getMessageStats();
-    
-    let msg = "📊 *XABAR STATISTIKASI*\n";
-    msg += "━━━━━━━━━━━━━━━━━━\n\n";
-    msg += `📨 Yuborilgan xabarlar: ${stats.totalSent} ta\n`;
-    msg += `✅ O'qilgan xabarlar: ${stats.totalRead} ta\n`;
-    msg += `📈 O'qilish foizi: ${stats.readPercentage}%\n\n`;
-    
-    if (stats.messages.length > 0) {
-        msg += "📜 *SO'NGI XABARLAR*\n";
-        msg += "━━━━━━━━━━━━━━━━━━\n\n";
-        
-        for (const msgRecord of stats.messages) {
-            msg += `📅 ${formatTashkentDate(msgRecord.sentDate)}\n`;
-            msg += `📝 "${msgRecord.text.substring(0, 40)}${msgRecord.text.length > 40 ? "..." : ""}"\n`;
-            msg += `👁️ O'qiganlar: ${msgRecord.readCount} / ${msgRecord.totalRecipients || 0}\n`;
-            msg += `📊 O'qilish: ${msgRecord.readPercentage}%\n`;
-            msg += "━━━━━━━━━━━━━━━━━━\n";
-        }
-    }
-    
-    const keyboard = {
-        inline_keyboard: [
-            [{ text: "🔄 Yangilash", callback_data: "refresh_message_stats" }],
-            [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
-        ]
-    };
-    
-    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: keyboard });
-}
-
 // -------------------- SESSIONS --------------------
 const userSessions = new Map();
 
@@ -1438,7 +1320,7 @@ function clearUserSession(userId) {
 
 let userManagePage = 0;
 
-// -------------------- BOTNI YARATISH --------------------
+// -------------------- BOTNI YARATISH (TO'G'RILANGAN) --------------------
 const bot = new TelegramBot(BOT_TOKEN, { 
     polling: {
         interval: 300,
@@ -1817,7 +1699,7 @@ bot.onText(/\/statistika/, async (msg) => {
     if (!isAdmin(userId)) return;
     
     const stats = getStatistics();
-    await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: ${stats.totalUsers}\n🚫 Bloklanganlar: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 To'lovli: ${stats.paidDiagnostics}\n🎉 Bepul: ${stats.freeDiagnostics}\n💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.totalErrors}\n📹 Videolar: ${stats.totalVideos} ta\n👁️ Video ko'rishlar: ${stats.totalVideoViews} ta\n📌 Joriy versiya: \`V${stats.currentVersion}\`\n📊 Yangilanishlar soni: ${stats.versionHistoryCount} ta\n📨 Yuborilgan xabarlar: ${stats.totalMessagesSent}\n📈 Xabar o'qilish: ${stats.messagesReadPercentage}%\n\n🔑 Litsenziya ID: \`${uniqueInstallId}\``, { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: " + stats.totalUsers + "\n🚫 Bloklanganlar: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 To'lovli: " + stats.paidDiagnostics + "\n🎉 Bepul: " + stats.freeDiagnostics + "\n💵 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n⚠️ Xatoliklar: " + stats.totalErrors + "\n📹 Videolar: " + stats.totalVideos + " ta\n👁️ Video ko'rishlar: " + stats.totalVideoViews + " ta\n📌 Joriy versiya: `V" + stats.currentVersion + "`\n📊 Yangilanishlar soni: " + stats.versionHistoryCount + " ta\n\n🔑 Litsenziya ID: `" + uniqueInstallId + "`", { parse_mode: "Markdown" });
     await sendMainMenu(chatId, true, getUserDevice(userId));
 });
 
@@ -1924,22 +1806,21 @@ bot.on("message", async (msg) => {
         
         const keyboard = {
             inline_keyboard: [
-                [{ text: "📖 Xabarni o'qish", callback_data: "mark_as_read" }],
                 [{ text: "🚀 Yangi botga o'tish", url: NEW_BOT_LINK }],
                 [{ text: "🏠 Asosiy menyu", callback_data: "back_to_main" }]
             ]
         };
         
-        const result = await sendNotificationToAllUsers(messageText, userId, keyboard);
+        const result = await sendNotificationToAllUsers(messageText, keyboard);
         
-        await bot.sendMessage(chatId, `✅ *Xabar yuborildi!*\n\n✅ Yuborildi: ${result.success} ta foydalanuvchiga\n❌ Yuborilmadi: ${result.fail} ta\n📨 Xabar ID: ${result.messageId}\n\n💡 Foydalanuvchilar xabarni ochganda "O'qilgan" deb belgilanadi.`, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, `✅ *Xabar yuborildi!*\n\n✅ Yuborildi: ${result.success} ta foydalanuvchiga\n❌ Yuborilmadi: ${result.fail} ta\n💡 Xabarlar "o'qilgan" bo'lib ketmasligi uchun sendChatAction qo'shilgan!`, { parse_mode: "Markdown" });
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, deviceType);
         return;
     }
     
-    // Admin versiya yangilash
+    // Admin versiya yangilash (KOD O'ZGARGANDA!)
     if (session.step === "admin_update_version") {
         if (!isAdmin(userId)) {
             clearUserSession(userId);
@@ -2176,11 +2057,8 @@ bot.on("message", async (msg) => {
     if (isAdmin(userId)) {
         if (text === "📊 Statistika") {
             const stats = getStatistics();
-            await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol: ${stats.totalUsers}\n🚫 Bloklangan: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${stats.totalVideos} ta\n📌 Versiya: \`V${stats.currentVersion}\`\n📊 Yangilanishlar: ${stats.versionHistoryCount} ta\n📨 Xabarlar: ${stats.totalMessagesSent} ta (${stats.messagesReadPercentage}% o'qilgan)\n🔑 Litsenziya ID: \`${uniqueInstallId}\``, { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol: ${stats.totalUsers}\n🚫 Bloklangan: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${stats.totalVideos} ta\n📌 Versiya: \`V${stats.currentVersion}\`\n📊 Yangilanishlar: ${stats.versionHistoryCount} ta\n🔑 Litsenziya ID: \`${uniqueInstallId}\``, { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, deviceType);
-        }
-        else if (text === "📊 Xabar statistikasi") {
-            await showMessageStats(chatId);
         }
         else if (text === "👥 Foydalanuvchilar") {
             usersListPage = 0;
@@ -2273,6 +2151,7 @@ bot.on("message", async (msg) => {
             adminSession.data = {};
             await bot.sendMessage(chatId, "📤 *VIDEO YUKLASH*\n\nIltimos, video faylni yuboring:", { parse_mode: "Markdown" });
         }
+        // YANGI: VIDEO O'CHIRISH
         else if (text === "🗑️ Video o'chirish") {
             if (!isAdmin(userId)) return;
             await showVideoManagement(chatId);
@@ -2388,7 +2267,7 @@ bot.on("message", async (msg) => {
         else if (text === "📢 Xabar yuborish") {
             const adminSession = getUserSession(userId);
             adminSession.step = "admin_send_message";
-            await bot.sendMessage(chatId, "📢 *XABAR YUBORISH*\n\nBarcha foydalanuvchilarga yuboriladigan xabarni kiriting:\n\n❌ Bekor qilish uchun /cancel yozing.\n\n💡 Xabar yuborilganda har bir foydalanuvchiga bildirishnoma keladi va ular xabarni ochganda \"O'qilgan\" deb belgilanadi.", { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "📢 *XABAR YUBORISH*\n\nBarcha foydalanuvchilarga yuboriladigan xabarni kiriting:\n\n❌ Bekor qilish uchun /cancel yozing.", { parse_mode: "Markdown" });
         }
         else if (text === "❌ Asosiy menyu") {
             clearUserSession(userId);
@@ -2427,21 +2306,7 @@ bot.on("callback_query", async (query) => {
     
     const deviceType = getUserDevice(userId);
     
-    // YANGI: Xabarni o'qilgan deb belgilash
-    if (data === "mark_as_read") {
-        // Foydalanuvchi xabarni o'qiganligini statistikaga yozish
-        // Bu yerda qo'shimcha logika qo'shish mumkin
-        await bot.answerCallbackQuery(query.id, { text: "✅ Xabar o'qildi! Rahmat!", show_alert: false });
-        return;
-    }
-    
-    // YANGI: Xabar statistikasini yangilash
-    if (data === "refresh_message_stats") {
-        await showMessageStats(chatId);
-        return;
-    }
-    
-    // Video o'chirish uchun callback
+    // YANGI: Video o'chirish uchun callback
     if (data.startsWith("delete_video_")) {
         if (!isAdmin(userId)) {
             await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
@@ -2450,6 +2315,7 @@ bot.on("callback_query", async (query) => {
         
         const videoId = parseInt(data.split("_")[2]);
         
+        // Tasdiqlash uchun keyboard
         const confirmKeyboard = {
             reply_markup: {
                 inline_keyboard: [
@@ -2481,6 +2347,7 @@ bot.on("callback_query", async (query) => {
         const result = deleteVideo(videoId, userId);
         await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
         
+        // O'chirishdan keyin videolar ro'yxatini yangilash
         await showVideoManagement(chatId);
         return;
     }
@@ -2974,7 +2841,6 @@ bot.on("callback_query", async (query) => {
             loadData();
             loadVideos();
             loadVersionHistory();
-            loadMessageStats();
             await bot.sendMessage(chatId, "✅ *Database tiklandi!*", { parse_mode: "Markdown" });
         } else {
             await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
@@ -3118,22 +2984,19 @@ loadData();
 loadAdminSettings();
 loadVideos();
 loadVersionHistory();
-loadMessageStats();
 
 console.log("=".repeat(60));
 console.log("🚗 ISUZU DOCTOR BOT ISHGA TUSHDI");
 console.log("=".repeat(60));
 console.log("📌 Versiya: V" + currentVersion);
 console.log("⚠️ Versiya FAQAT kod o'zgarganda yangilanadi!");
-console.log("💬 Xabarlar bildirishnoma bilan yuboriladi!");
-console.log("📊 Xabar o'qilish statistikasi yuritiladi!");
+console.log("💬 Xabarlar 'o'qilgan' bo'lib ketmasligi uchun sendChatAction qo'shilgan!");
 console.log("👑 Adminlar: " + ADMIN_IDS.join(", "));
 console.log("👥 Foydalanuvchilar: " + users.filter(u => !u.isAdmin).length);
 console.log("🔧 Diagnostikalar: " + diagnostics.length);
 console.log("📹 Videolar: " + videoList.length + " ta");
 console.log("💳 Karta: " + CARD_NUMBER);
 console.log("📊 Yangilanishlar soni: " + versionHistory.length);
-console.log("📨 Yuborilgan xabarlar: " + messageStats.totalSent);
 console.log("💾 Volume manzili: " + VOLUME_PATH);
 console.log("🔑 Litsenziya ID: " + uniqueInstallId);
 console.log("© Muallif: " + BOT_OWNER);
