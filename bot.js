@@ -253,7 +253,6 @@ function loadVideos() {
     try {
         if (fs.existsSync(VIDEOS_FILE)) {
             videoList = JSON.parse(fs.readFileSync(VIDEOS_FILE, "utf8"));
-            // Har bir videoda fileId borligini tekshirish
             videoList.forEach(v => {
                 if (!v.fileId) {
                     console.warn(`⚠️ Video ${v.id} da fileId yo'q!`);
@@ -275,7 +274,6 @@ function saveVideos() {
 }
 
 function addVideo(videoFileId, title, description, adminId) {
-    // videoFileId to'g'ri ekanligini tekshirish
     if (!videoFileId || typeof videoFileId !== 'string') {
         console.error("Xato: videoFileId noto'g'ri:", videoFileId);
         return null;
@@ -296,7 +294,7 @@ function addVideo(videoFileId, title, description, adminId) {
     videoList.unshift(newVideo);
     saveVideos();
     
-    console.log("✅ Video qo'shildi:", newVideo.id, "-", newVideo.title, "FileID:", newVideo.fileId);
+    console.log("✅ Video qo'shildi:", newVideo.id, "-", newVideo.title, "FileID:", newVideo.fileId.substring(0, 30) + "...");
     
     addSecurityLog("VIDEO_UPLOADED", adminId, "Video yuklandi: " + title);
     addVersionRecord(currentVersion, "Video yuklandi: " + title, adminId);
@@ -1956,11 +1954,12 @@ bot.on("message", async (msg) => {
     const text = msg.text;
     const video = msg.video;
     const photo = msg.photo;
+    const document = msg.document;
     
     const session = getUserSession(userId);
     const deviceType = getUserDevice(userId);
     
-    // Admin video yuklash - TO'G'RILANGAN QISM
+    // MUHIM: VIDEO YUKLASH SESSIONNI BIRINCHI TEKSHIRISH
     if (session.step === "admin_waiting_video") {
         if (!isAdmin(userId)) {
             clearUserSession(userId);
@@ -1968,23 +1967,58 @@ bot.on("message", async (msg) => {
             return;
         }
         
+        // VIDEO tekshirish
         if (video) {
+            console.log("Video qabul qilindi:", video.file_id, "Hajmi:", video.file_size);
+            
             // Video hajmini tekshirish (maksimal 50MB)
             if (video.file_size > 50 * 1024 * 1024) {
-                await bot.sendMessage(chatId, "❌ *Video hajmi 50MB dan katta!*\n\nIltimos, kichikroq video yuboring.", { parse_mode: "Markdown" });
+                await bot.sendMessage(chatId, "❌ *Video hajmi 50MB dan katta!*\n\nIltimos, kichikroq video yuboring.\n\n📤 Qaytadan video yuboring yoki /cancel bosing:", { parse_mode: "Markdown" });
                 return;
             }
             
             session.data.videoFileId = video.file_id;
             session.step = "admin_waiting_video_title";
             
-            await bot.sendMessage(chatId, "✅ *Video qabul qilindi!*\n\n📹 Video ID: `" + video.file_id.substring(0, 20) + "...`\n\n📝 Endi video nomini kiriting:", { parse_mode: "Markdown" });
-        } else if (photo) {
-            await bot.sendMessage(chatId, "❌ *Iltimos, Rasm emas, VIDEO fayl yuboring!*\n\nVideo formatida yuboring (MP4, AVI va h.k.)", { parse_mode: "Markdown" });
-        } else {
-            await bot.sendMessage(chatId, "❌ *Iltimos, video fayl yuboring!*\n\nVideo formatida yuboring (MP4, AVI va h.k.)\n\n💡 Maslahat: video hajmi 50MB dan kichik bo'lishi kerak.", { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "✅ *Video qabul qilindi!*\n\n📹 Video ID: `" + video.file_id.substring(0, 20) + "...`\n📏 Hajmi: " + (video.file_size / 1024 / 1024).toFixed(2) + " MB\n\n📝 Endi video *NOMINI* kiriting:\n\nMasalan: 'Isuzu Navigator 2024'", { parse_mode: "Markdown" });
+            return;
         }
-        return;
+        // DOCUMENT (video fayl sifatida yuborilgan bo'lsa)
+        else if (document && document.mime_type && document.mime_type.startsWith("video/")) {
+            console.log("Document video qabul qilindi:", document.file_id, "MIME:", document.mime_type);
+            
+            if (document.file_size > 50 * 1024 * 1024) {
+                await bot.sendMessage(chatId, "❌ *Video hajmi 50MB dan katta!*\n\nIltimos, kichikroq video yuboring.", { parse_mode: "Markdown" });
+                return;
+            }
+            
+            session.data.videoFileId = document.file_id;
+            session.step = "admin_waiting_video_title";
+            
+            await bot.sendMessage(chatId, "✅ *Video fayl qabul qilindi!*\n\n📹 Fayl ID: `" + document.file_id.substring(0, 20) + "...`\n📏 Hajmi: " + (document.file_size / 1024 / 1024).toFixed(2) + " MB\n\n📝 Endi video *NOMINI* kiriting:", { parse_mode: "Markdown" });
+            return;
+        }
+        // Rasm yuborilgan bo'lsa
+        else if (photo) {
+            await bot.sendMessage(chatId, "❌ *Iltimos, VIDEO fayl yuboring!*\n\n📸 Rasm emas, video formatida yuboring (MP4, AVI, MOV va h.k.)\n\n📤 Qaytadan video yuboring:", { parse_mode: "Markdown" });
+            return;
+        }
+        // Bekor qilish
+        else if (text === "/cancel") {
+            clearUserSession(userId);
+            await bot.sendMessage(chatId, "❌ *Video yuklash bekor qilindi!*", { parse_mode: "Markdown" });
+            await sendMainMenu(chatId, true, deviceType);
+            return;
+        }
+        // Boshqa matn
+        else if (text) {
+            await bot.sendMessage(chatId, "❌ *Iltimos, VIDEO fayl yuboring!*\n\n📤 Video faylni yuboring (MP4, AVI, MOV formatlarida)\n\n💡 Maslahat: Video hajmi 50MB dan kichik bo'lishi kerak.\n\n❌ Bekor qilish: /cancel", { parse_mode: "Markdown" });
+            return;
+        }
+        else {
+            await bot.sendMessage(chatId, "❌ *Iltimos, video fayl yuboring!*\n\n📤 Video yuboring (MP4, AVI, MOV formatlarida)\n\n❌ Bekor qilish: /cancel", { parse_mode: "Markdown" });
+            return;
+        }
     }
     
     if (session.step === "admin_waiting_video_title") {
@@ -1994,14 +2028,21 @@ bot.on("message", async (msg) => {
             return;
         }
         
+        if (text === "/cancel") {
+            clearUserSession(userId);
+            await bot.sendMessage(chatId, "❌ *Video yuklash bekor qilindi!*", { parse_mode: "Markdown" });
+            await sendMainMenu(chatId, true, deviceType);
+            return;
+        }
+        
         if (!text || text.length < 3) {
-            await bot.sendMessage(chatId, "❌ *Iltimos, video nomini kiriting!* (kamida 3 harf)", { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "❌ *Iltimos, video nomini kiriting!* (kamida 3 harf)\n\n📝 Video nomi:", { parse_mode: "Markdown" });
             return;
         }
         
         session.data.title = text;
         session.step = "admin_waiting_video_description";
-        await bot.sendMessage(chatId, "✅ *Nom qabul qilindi:* " + text + "\n\n📝 Endi video tavsifini kiriting (ixtiyoriy):\n\n❌ Bekor qilish: /cancel", { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, "✅ *Nom qabul qilindi:* " + text + "\n\n📝 Endi video *TAVSIFINI* kiriting (ixtiyoriy):\n\nMasalan: 'Ushbu videoda Isuzu avtomobilining diagnostikasi ko'rsatilgan'\n\n❌ Bekor qilish: /cancel", { parse_mode: "Markdown" });
         return;
     }
     
@@ -2025,9 +2066,12 @@ bot.on("message", async (msg) => {
         const newVideo = addVideo(session.data.videoFileId, session.data.title, session.data.description, userId);
         
         if (newVideo) {
-            await bot.sendMessage(chatId, "✅ *Video muvaffaqiyatli yuklandi!*\n\n📹 *Nomi:* " + session.data.title + "\n🆔 Video ID: " + newVideo.id + "\n\n📌 Video endi galereyada mavjud!", { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "✅ *Video muvaffaqiyatli yuklandi!*\n\n📹 *Nomi:* " + session.data.title + "\n🆔 Video ID: " + newVideo.id + "\n👁️ Ko'rishlar: 0\n👍 Layklar: 0\n\n📌 Video endi galereyada mavjud!", { parse_mode: "Markdown" });
         } else {
-            await bot.sendMessage(chatId, "❌ *Video yuklashda xatolik!*\n\nIltimos, qaytadan urinib ko'ring.", { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "❌ *Video yuklashda xatolik!*\n\nIltimos, qaytadan urinib ko'ring.\n\n📤 Qaytadan video yuboring:", { parse_mode: "Markdown" });
+            session.step = "admin_waiting_video";
+            session.data = {};
+            return;
         }
         
         clearUserSession(userId);
@@ -2035,6 +2079,7 @@ bot.on("message", async (msg) => {
         return;
     }
     
+    // Qolgan handlerlar (xabar yuborish, versiya yangilash, diagnostika va boshqalar)
     // Admin xabar yuborish
     if (session.step === "admin_send_message") {
         if (!isAdmin(userId)) {
@@ -2085,7 +2130,6 @@ bot.on("message", async (msg) => {
             return;
         }
         
-        // Versiya formatini tekshirish
         const versionPattern = /^\d+\.\d+$/;
         if (!versionPattern.test(newVersion)) {
             await bot.sendMessage(chatId, "❌ *Noto'g'ri versiya formati!*\n\nMasalan: 2.2 yoki 3.0 formatida kiriting.", { parse_mode: "Markdown" });
@@ -2189,7 +2233,7 @@ bot.on("message", async (msg) => {
         return;
     }
     
-    // ======================== ADMIN DIAGNOSTIKA QO'SHISH ========================
+    // Admin diagnostika qo'shish
     if (session.step === "admin_add_diagnostic") {
         if (!isAdmin(userId)) {
             clearUserSession(userId);
@@ -2335,7 +2379,6 @@ bot.on("message", async (msg) => {
             session.data.extraWorkDescription || ""
         );
         
-        // Admin uchun xabar
         let adminResponse = "🔧 *DIAGNOSTIKA QO'SHILDI*\n\n";
         adminResponse += "👤 " + (session.data.targetUser.fullName || "Ismsiz") + "\n";
         adminResponse += "🚗 " + result.carNumber + "\n";
@@ -2360,7 +2403,6 @@ bot.on("message", async (msg) => {
         
         await bot.sendMessage(chatId, adminResponse, { parse_mode: "Markdown" });
         
-        // Foydalanuvchi uchun xabar
         let userMsg = "🔧 *DIAGNOSTIKA NATIJALARI*\n\n";
         userMsg += "🚗 *" + result.carNumber + "*\n";
         userMsg += "📅 " + formatTashkentDate(new Date()) + "\n";
@@ -2584,7 +2626,7 @@ bot.on("message", async (msg) => {
             const adminSession = getUserSession(userId);
             adminSession.step = "admin_waiting_video";
             adminSession.data = {};
-            await bot.sendMessage(chatId, "📤 *VIDEO YUKLASH*\n\nIltimos, video faylni yuboring:\n\n💡 Maslahat: Video hajmi 50MB dan kichik bo'lishi kerak!\n\n❌ Bekor qilish: /cancel", { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "📤 *VIDEO YUKLASH*\n\nIltimos, video faylni yuboring:\n\n💡 Maslahat: \n• MP4, AVI, MOV formatlarida\n• Video hajmi 50MB dan kichik bo'lishi kerak!\n• Sifatni pasaytirib yuborishingiz mumkin\n\n❌ Bekor qilish: /cancel", { parse_mode: "Markdown" });
         }
         else if (text === "🗑️ Video o'chirish") {
             if (!isAdmin(userId)) return;
@@ -3358,7 +3400,7 @@ bot.on("callback_query", async (query) => {
         userManagePage = 0;
         await sendMainMenu(chatId, true, deviceType);
     }
-    // ======================== VIDEO KO'RISH (TO'G'RILANGAN QISM) ========================
+    // VIDEO KO'RISH (TO'G'RILANGAN)
     else if (data.startsWith("watch_video_")) {
         const videoId = parseInt(data.split("_")[2]);
         const video = videoList.find(v => v.id === videoId);
@@ -3368,23 +3410,19 @@ bot.on("callback_query", async (query) => {
             return;
         }
         
-        // Video ko'rishlar sonini oshirish
         updateVideoViews(videoId);
         
         const videoText = "📹 *" + video.title + "*\n\n" + (video.description || "📝 Tavsif mavjud emas") + "\n\n👁️ Ko'rishlar: " + (video.views || 0) + " | 👍 Layklar: " + (video.likes || 0) + "\n\n© " + BOT_OWNER + "\n📌 Versiya: V" + currentVersion;
         
         const keyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: "👍 Like (" + (video.likes || 0) + ")", callback_data: "like_video_" + videoId }],
-                    [{ text: "📹 Boshqa videolar", callback_data: "user_video_gallery" }],
-                    [{ text: "🔙 Asosiy menyu", callback_data: "back_to_main" }]
-                ]
-            }
+            inline_keyboard: [
+                [{ text: "👍 Like (" + (video.likes || 0) + ")", callback_data: "like_video_" + videoId }],
+                [{ text: "📹 Boshqa videolar", callback_data: "user_video_gallery" }],
+                [{ text: "🔙 Asosiy menyu", callback_data: "back_to_main" }]
+            ]
         };
         
         try {
-            // Video fileId borligini tekshirish
             if (!video.fileId) {
                 throw new Error("Video fayl ID topilmadi!");
             }
@@ -3392,7 +3430,7 @@ bot.on("callback_query", async (query) => {
             await bot.sendVideo(chatId, video.fileId, { 
                 caption: videoText, 
                 parse_mode: "Markdown",
-                reply_markup: keyboard.reply_markup
+                reply_markup: keyboard
             });
         } catch (err) {
             console.error("Video yuborish xatolik:", err);
@@ -3403,8 +3441,8 @@ bot.on("callback_query", async (query) => {
         const videoId = parseInt(data.split("_")[2]);
         const success = updateVideoLikes(videoId, userId);
         
+        const video = videoList.find(v => v.id === videoId);
         if (success) {
-            const video = videoList.find(v => v.id === videoId);
             await bot.answerCallbackQuery(query.id, { text: "👍 Layk qo'shildi! Hozirgi layklar: " + (video?.likes || 0), show_alert: false });
         } else {
             await bot.answerCallbackQuery(query.id, { text: "❌ Siz allaqachon layk bosgansiz!", show_alert: true });
@@ -3432,7 +3470,6 @@ bot.on("polling_error", (error) => {
 
 process.on("uncaughtException", (error) => {
     console.error("Uncaught exception:", error);
-    // Xatolikni faylga yozish
     const errorLog = path.join(VOLUME_PATH, 'error.log');
     fs.appendFileSync(errorLog, new Date().toISOString() + " - " + error.stack + "\n");
 });
