@@ -10,18 +10,7 @@ const BOT_OWNER = "Erkinjon Shukurov";
 const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
 
 // ======================== VERSIYA TIZIMI ========================
-let currentVersion = "2.1";
-
-function incrementVersion() {
-    const parts = currentVersion.split('.');
-    const major = parts[0];
-    let minor = parseInt(parts[1]);
-    minor++;
-    currentVersion = `${major}.${minor}`;
-    saveVersion();
-    console.log(`📌 Versiya yangilandi: V${currentVersion}`);
-    return currentVersion;
-}
+let currentVersion = "2.2";
 
 function getVersionInfo() {
     return {
@@ -624,12 +613,12 @@ function loadVersion() {
             currentVersion = versionData.version;
             console.log("📌 Joriy versiya: V" + currentVersion);
         } else {
-            currentVersion = "2.1";
+            currentVersion = "2.2";
             saveVersion();
         }
     } catch (err) {
         console.error("Versiya yuklashda xatolik:", err);
-        currentVersion = "2.1";
+        currentVersion = "2.2";
         saveVersion();
     }
 }
@@ -1414,7 +1403,7 @@ async function showConversation(chatId, userId, isAdminView = false, targetUserI
             reply_markup: {
                 keyboard: [
                     [{ text: "📍 Lokatsiya yuborish", request_location: true }],
-                    [{ text: "🔙 Asosiy menyu" }]
+                    [{ text: "🔙 Bekor qilish" }]
                 ],
                 resize_keyboard: true,
                 one_time_keyboard: true
@@ -1461,7 +1450,7 @@ async function showConversation(chatId, userId, isAdminView = false, targetUserI
             reply_markup: {
                 keyboard: [
                     [{ text: "📍 Lokatsiya yuborish", request_location: true }],
-                    [{ text: "🔙 Asosiy menyu" }]
+                    [{ text: "🔙 Bekor qilish" }]
                 ],
                 resize_keyboard: true,
                 one_time_keyboard: true
@@ -2245,6 +2234,7 @@ bot.on("message", async (msg) => {
     
     const session = getUserSession(userId);
     const deviceType = getUserDevice(userId);
+    const user = getUserByUserId(userId);
     
     // ========== VIDEO QABUL QILINMAYDI ==========
     if (video) {
@@ -2285,29 +2275,46 @@ bot.on("message", async (msg) => {
                 }
             } else {
                 addMessage(userId, ADMIN_IDS[0], "", "location", { latitude: location.latitude, longitude: location.longitude });
-                await bot.sendMessage(chatId, "✅ *Lokatsiya yuborildi! Admin tez orada javob beradi.*", { parse_mode: "Markdown" });
-                const adminMsg = `📍 *Foydalanuvchi lokatsiya yubordi*\n\n👤 ${user ? (user.fullName || user.phone) : "Foydalanuvchi"}\n🆔 ID: ${userId}\n🗺️ [Xaritada ko'rish](https://maps.google.com/?q=${location.latitude},${location.longitude})`;
+                await bot.sendMessage(chatId, "✅ *Lokatsiya yuborildi! Admin tez orada javob beradi.*\n\n💬 Xabar yozishda davom eting:", { parse_mode: "Markdown" });
+                
+                // Admin'ga bildirishnoma yuborish
+                const userInfo = user ? (user.fullName || user.phone) : "Foydalanuvchi";
+                const adminMsg = `📍 *Yangi lokatsiya*\n\n👤 ${userInfo}\n🆔 ID: ${userId}\n🗺️ [Xaritada ko'rish](https://maps.google.com/?q=${location.latitude},${location.longitude})\n\n💬 Javob berish uchun "💬 Muloqotlar" tugmasini bosing!`;
                 for (const adminId of ADMIN_IDS) {
                     await bot.sendMessage(adminId, adminMsg, { parse_mode: "Markdown", disable_web_page_preview: true });
                 }
-                await showConversation(chatId, userId, false);
+                
+                const userSession = getUserSession(userId);
+                userSession.step = "conversation_mode";
+                userSession.data.inConversation = true;
             }
             return;
         }
         
         // Oddiy lokatsiya - muloqot boshlash
-        if (!isAdmin(userId)) {
+        if (!isAdmin(userId) && user && !user.isBlocked) {
             addMessage(userId, ADMIN_IDS[0], "", "location", { latitude: location.latitude, longitude: location.longitude });
             await bot.sendMessage(chatId, "✅ *Lokatsiya yuborildi! Admin tez orada javob beradi.*\n\n💬 Xabar yozishda davom eting:", { parse_mode: "Markdown" });
-            const adminMsg = `📍 *Yangi lokatsiya*\n\n👤 ${user ? (user.fullName || user.phone) : "Foydalanuvchi"}\n🆔 ID: ${userId}\n🗺️ [Xaritada ko'rish](https://maps.google.com/?q=${location.latitude},${location.longitude})`;
+            
+            // Admin'ga bildirishnoma yuborish
+            const userInfo = user ? (user.fullName || user.phone) : "Foydalanuvchi";
+            const adminMsg = `📍 *Yangi lokatsiya*\n\n👤 ${userInfo}\n🆔 ID: ${userId}\n🗺️ [Xaritada ko'rish](https://maps.google.com/?q=${location.latitude},${location.longitude})\n\n💬 Javob berish uchun "💬 Muloqotlar" tugmasini bosing!`;
             for (const adminId of ADMIN_IDS) {
                 await bot.sendMessage(adminId, adminMsg, { parse_mode: "Markdown", disable_web_page_preview: true });
             }
+            
             const userSession = getUserSession(userId);
             userSession.step = "conversation_mode";
             userSession.data.inConversation = true;
             return;
         }
+        return;
+    }
+    
+    // ========== "BEKOR QILISH" TUGMASI ==========
+    if (text === "🔙 Bekor qilish" || text === "🔙 Asosiy menyu" || text === "🔙 Muloqotlar ro'yxati") {
+        clearUserSession(userId);
+        await sendMainMenu(chatId, isAdmin(userId), userId);
         return;
     }
     
@@ -2480,6 +2487,8 @@ bot.on("message", async (msg) => {
             if (targetUserId && text && text !== "🔙 Muloqotlar ro'yxati" && text !== "🔙 Asosiy menyu" && !text.startsWith("/")) {
                 addAdminReply(userId, targetUserId, text, "text", null);
                 await bot.sendMessage(chatId, "✅ *Javob yuborildi!*", { parse_mode: "Markdown" });
+                
+                // Foydalanuvchiga xabar yuborish
                 await bot.sendMessage(targetUserId, `👑 *Admin javobi:*\n\n${text}`, { parse_mode: "Markdown" });
                 await showConversation(chatId, userId, true, targetUserId);
                 return;
@@ -2487,17 +2496,24 @@ bot.on("message", async (msg) => {
                 clearUserSession(userId);
                 await showAllConversations(chatId, 0);
                 return;
+            } else if (text === "🔙 Asosiy menyu") {
+                clearUserSession(userId);
+                await sendMainMenu(chatId, true, userId);
+                return;
             }
         } else {
-            if (text && text !== "🔙 Asosiy menyu" && !text.startsWith("/")) {
+            if (text && text !== "🔙 Asosiy menyu" && text !== "🔙 Bekor qilish" && !text.startsWith("/")) {
                 addMessage(userId, ADMIN_IDS[0], text, "text", null);
                 await bot.sendMessage(chatId, "✅ *Xabar yuborildi! Admin tez orada javob beradi.*\n\n💬 Davom eting:", { parse_mode: "Markdown" });
-                const adminMsg = `💬 *Yangi xabar*\n\n👤 ${user ? (user.fullName || user.phone) : "Foydalanuvchi"}\n🆔 ID: ${userId}\n📝 Xabar: ${text}`;
+                
+                // Admin'ga bildirishnoma yuborish
+                const userInfo = user ? (user.fullName || user.phone) : "Foydalanuvchi";
+                const adminMsg = `💬 *Yangi xabar*\n\n👤 ${userInfo}\n🆔 ID: ${userId}\n📝 Xabar: ${text}\n\n💬 Javob berish uchun "💬 Muloqotlar" tugmasini bosing!`;
                 for (const adminId of ADMIN_IDS) {
                     await bot.sendMessage(adminId, adminMsg, { parse_mode: "Markdown" });
                 }
                 return;
-            } else if (text === "🔙 Asosiy menyu") {
+            } else if (text === "🔙 Asosiy menyu" || text === "🔙 Bekor qilish") {
                 clearUserSession(userId);
                 await sendMainMenu(chatId, false, userId);
                 return;
@@ -2509,8 +2525,6 @@ bot.on("message", async (msg) => {
     if (!text) return;
     if (text === "/start") return;
     if (text.startsWith("/")) return;
-    
-    const user = getUserByUserId(userId);
     
     // Yangi avtomobil qo'shish
     if (session.step === "first_car_number") {
@@ -3117,7 +3131,7 @@ bot.on("callback_query", async (query) => {
     await bot.answerCallbackQuery(query.id);
     
     const user = getUserByUserId(userId);
-    if (!user) {
+    if (!user && data !== "back_to_main" && !data.startsWith("open_conversation_") && !data.startsWith("conversations_page_")) {
         await bot.sendMessage(chatId, "❌ Ro'yxatdan o'tmagan! /start bosing.");
         return;
     }
@@ -3130,7 +3144,7 @@ bot.on("callback_query", async (query) => {
         session.step = "conversation_mode";
         session.data.inConversation = true;
         
-        await bot.sendMessage(chatId, "💬 *Admin bilan bog'lanish*\n\nXabaringizni yozing. Admin sizga javob beradi.\n\n📍 Lokatsiya yuborish uchun tugmani bosing.", {
+        await bot.sendMessage(chatId, "💬 *Admin bilan bog'lanish*\n\nXabaringizni yozing. Admin sizga javob beradi.\n\n📍 Lokatsiya yuborish uchun tugmani bosing.\n\n🔙 Bekor qilish tugmasini bosing.", {
             parse_mode: "Markdown",
             ...getLocationKeyboard()
         });
@@ -3259,7 +3273,7 @@ bot.on("callback_query", async (query) => {
         session.data.lastName = user.lastName;
         session.data.username = user.username;
         
-        await bot.sendMessage(chatId, "🚗 *Yangi avtomobil raqamini kiriting:*\n\nMasalan: 01A777AA", {
+        await bot.sendMessage(chatId, "🚗 *Yangi avtomobil raqamini kiriting:*\n\nMasalan: 01A777AA\n\n🔙 Bekor qilish uchun /close yozing", {
             parse_mode: "Markdown",
             reply_markup: { remove_keyboard: true }
         });
