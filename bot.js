@@ -8,7 +8,7 @@ const os = require('os');
 const LICENSE_KEY = "ISUZU_DOCTOR_BOT_V2";
 const BOT_OWNER = "Erkinjon Shukurov";
 const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
-let currentVersion = "2.6";
+let currentVersion = "2.7";
 
 // ======================== LINKLAR ========================
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
@@ -169,26 +169,12 @@ function getLocationButtons(lat, lng) {
 
 // Xarita linkidan koordinata olish
 function parseMapUrl(text) {
-    // Google Maps: https://www.google.com/maps?q=40.7128,-74.0060
     let match = text.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-    if (match) {
-        return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
-    }
-    // Google Maps: https://maps.google.com/?ll=40.7128,-74.0060
+    if (match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
     match = text.match(/[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-    if (match) {
-        return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
-    }
-    // Yandex Maps: https://yandex.uz/maps/?ll=69.2401,41.2995
-    match = text.match(/[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-    if (match) {
-        return { lat: parseFloat(match[2]), lng: parseFloat(match[1]) };
-    }
-    // Koordinata formati: 40.7128, -74.0060
+    if (match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
     match = text.match(/(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
-    if (match) {
-        return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
-    }
+    if (match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
     return null;
 }
 
@@ -384,13 +370,27 @@ function addDiagnosticToCar(phone,car,work,notes,extraPrice=0,extraDesc="") {
 
 function getStatistics() {
     const active = users.filter(u=>!u.isAdmin && !u.isBlocked);
-    let cars=0, diagInc=0, laborInc=0;
+    let cars=0, diagInc=0, laborInc=0, totalVideoViews=0;
     for(const u of active) cars += u.cars.length;
     for(const d of diagnostics) {
         if(d.diagnosticPrice>0) diagInc += d.diagnosticPrice;
         if(d.laborPrice>0) laborInc += d.laborPrice;
     }
-    return { totalUsers:active.length, blockedUsers:users.filter(u=>!u.isAdmin && u.isBlocked).length, totalCars:cars, totalDiagnostics:diagnostics.length, diagnosticIncome:diagInc, laborIncome:laborInc, totalIncome:diagInc+laborInc, currentVersion, totalVideos:videoList.length, unreadMessages:getTotalUnreadForAdmin(ADMIN_IDS[0]) };
+    for(const v of videoList) totalVideoViews += (v.views || 0);
+    
+    return { 
+        totalUsers:active.length, 
+        blockedUsers:users.filter(u=>!u.isAdmin && u.isBlocked).length, 
+        totalCars:cars, 
+        totalDiagnostics:diagnostics.length, 
+        diagnosticIncome:diagInc, 
+        laborIncome:laborInc, 
+        totalIncome:diagInc+laborInc, 
+        currentVersion, 
+        totalVideos:videoList.length,
+        totalVideoViews: totalVideoViews,
+        unreadMessages:getTotalUnreadForAdmin(ADMIN_IDS[0]) 
+    };
 }
 
 function getTodayDiagnostics() { const t=new Date().toISOString().split("T")[0]; return diagnostics.filter(d=>d.date.split("T")[0]===t); }
@@ -399,9 +399,9 @@ function getErrors() { return errors.slice(-50).reverse(); }
 function getNearBonusCars() { const near=[]; for(const u of users) { if(u.isAdmin) continue; for(const c of u.cars) { if(c.bonusCount>=3 && c.bonusCount<5) near.push({ fullName:u.fullName, phone:u.phone, carNumber:c.carNumber, bonusCount:c.bonusCount, remaining:5-c.bonusCount }); } } return near; }
 function getAllUsersWithDetails() { return users.filter(u=>!u.isAdmin).map(u=>({ userId:u.userId, fullName:u.fullName||"Ismsiz", phone:u.phone, cars:u.cars, totalDiagnostics:u.totalDiagnosticsAll||0, isBlocked:u.isBlocked||false })); }
 
-function blockUser(id) { const u=getUserByUserId(id); if(u && !u.isAdmin) { u.isBlocked=true; saveUsers(); return { success:true, message:"Foydalanuvchi bloklandi" }; } return { success:false, message:"Xatolik" }; }
-function unblockUser(id) { const u=getUserByUserId(id); if(u) { u.isBlocked=false; saveUsers(); return { success:true, message:"Foydalanuvchi blokdan ochildi" }; } return { success:false, message:"Xatolik" }; }
-function deleteUser(id) { const idx=users.findIndex(u=>u.userId===id); if(idx!==-1 && !users[idx].isAdmin) { users.splice(idx,1); saveUsers(); return { success:true, message:"Foydalanuvchi o'chirildi" }; } return { success:false, message:"Xatolik" }; }
+function blockUser(id) { const u=getUserByUserId(id); if(u && !u.isAdmin) { u.isBlocked=true; saveUsers(); return { success:true, message:"✅ Foydalanuvchi bloklandi" }; } return { success:false, message:"❌ Xatolik" }; }
+function unblockUser(id) { const u=getUserByUserId(id); if(u) { u.isBlocked=false; saveUsers(); return { success:true, message:"✅ Foydalanuvchi blokdan ochildi" }; } return { success:false, message:"❌ Xatolik" }; }
+function deleteUser(id) { const idx=users.findIndex(u=>u.userId===id); if(idx!==-1 && !users[idx].isAdmin) { users.splice(idx,1); saveUsers(); return { success:true, message:"🗑️ Foydalanuvchi o'chirildi" }; } return { success:false, message:"❌ Xatolik" }; }
 function getActiveUsers() { return users.filter(u=>!u.isAdmin && !u.isBlocked); }
 function getBlockedUsers() { return users.filter(u=>!u.isAdmin && u.isBlocked); }
 
@@ -415,6 +415,64 @@ function saveAdminSettings() { fs.writeFileSync(ADMIN_SETTINGS_FILE, JSON.string
 function loadAdminSettings() { try { if(fs.existsSync(ADMIN_SETTINGS_FILE)) adminSettings = JSON.parse(fs.readFileSync(ADMIN_SETTINGS_FILE, "utf8")); } catch(e) { adminSettings = { allowedEditors: [], securityLog: [] }; } }
 
 async function sendNotificationToAllUsers(msg,keyboard=null) { let s=0,f=0; for(const u of users.filter(u=>!u.isAdmin && !u.isBlocked)) { try { await bot.sendMessage(u.userId, msg, { parse_mode:"Markdown", reply_markup:keyboard }); s++; } catch(e) { f++; } } return { success:s, fail:f }; }
+
+// ========== HISOBOT YARATISH FUNKSIYASI ==========
+async function generateFullReport(chatId) {
+    const stats = getStatistics();
+    const todayDiags = getTodayDiagnostics();
+    const nearBonus = getNearBonusCars();
+    
+    let report = "📊 *ISUZU DOCTOR BOT HISOBOTI*\n";
+    report += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    report += `📅 Sana: ${formatTashkentDateTime(new Date())}\n`;
+    report += `📌 Bot versiyasi: V${currentVersion}\n\n`;
+    
+    report += "👥 *FOYDALANUVCHILAR*\n";
+    report += `   • Faol foydalanuvchilar: ${stats.totalUsers} ta\n`;
+    report += `   • Bloklanganlar: ${stats.blockedUsers} ta\n`;
+    report += `   • Avtomobillar: ${stats.totalCars} ta\n\n`;
+    
+    report += "🔧 *DIAGNOSTIKA STATISTIKASI*\n";
+    report += `   • Jami diagnostikalar: ${stats.totalDiagnostics} ta\n`;
+    report += `   • Diagnostika daromadi: ${stats.diagnosticIncome.toLocaleString()} so'm\n`;
+    report += `   • Mehnat daromadi: ${stats.laborIncome.toLocaleString()} so'm\n`;
+    report += `   • Jami daromad: ${stats.totalIncome.toLocaleString()} so'm\n\n`;
+    
+    report += "📅 *BUGUNGI DIAGNOSTIKALAR*\n";
+    if (todayDiags.length === 0) {
+        report += "   • Bugun diagnostika yo'q\n";
+    } else {
+        let todayIncome = 0;
+        for (const d of todayDiags) {
+            todayIncome += (d.diagnosticPrice || 0) + (d.laborPrice || 0);
+        }
+        report += `   • ${todayDiags.length} ta diagnostika\n`;
+        report += `   • Bugungi daromad: ${todayIncome.toLocaleString()} so'm\n`;
+    }
+    report += "\n";
+    
+    report += "🎁 *BONUSGA YAQIN AVTOMOBILLAR*\n";
+    if (nearBonus.length === 0) {
+        report += "   • Bonusga yaqin avtomobillar yo'q\n";
+    } else {
+        for (const nb of nearBonus.slice(0, 5)) {
+            report += `   • ${nb.carNumber} (${nb.bonusCount}/5) - ${nb.remaining} ta qoldi\n`;
+        }
+    }
+    report += "\n";
+    
+    report += "📹 *VIDEO GALEREYA*\n";
+    report += `   • Jami videolar: ${stats.totalVideos} ta\n`;
+    report += `   • Umumiy ko'rishlar: ${stats.totalVideoViews} ta\n\n`;
+    
+    report += "💬 *MUHOQOTLAR*\n";
+    report += `   • O'qilmagan xabarlar: ${stats.unreadMessages} ta\n\n`;
+    
+    report += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    report += `© ${BOT_OWNER} | Isuzu Doctor Bot`;
+    
+    return report;
+}
 
 // -------------------- KEYBOARDS --------------------
 function getCompactInlineKeyboard(uid) {
@@ -480,16 +538,65 @@ async function showVideoManagement(chatId, page=0) {
     await bot.sendMessage(chatId, msg, { parse_mode:"Markdown", reply_markup:{ inline_keyboard:keyboard } });
 }
 
-async function showUsersList(chatId, page, messageId=null) {
-    const list = getAllUsersWithDetails();
-    const items=10, start=page*items, pageUsers=list.slice(start,start+items);
-    if(list.length===0) { await bot.sendMessage(chatId, "📭 Foydalanuvchi yo'q"); return; }
-    let msg=`👥 FOYDALANUVCHILAR\n📄 Sahifa ${page+1}/${Math.ceil(list.length/items)}\n━━━━━━━━━━━━━━━━━━\n\n`;
-    for(let i=0;i<pageUsers.length;i++) { const u=pageUsers[i]; const num=start+i+1; const st=u.isBlocked?"🔴":"🟢"; msg+=`${st} *${num}. ${u.fullName.substring(0,20)}*\n📞 ${u.phone}\n🚗 ${u.cars[0]?.carNumber||"❌"}\n━━━━━━━━━━━━━━━━━━\n`; }
-    const keyboard=[]; const nav=[]; if(page>0) nav.push({ text:"◀️ Oldingi", callback_data:"users_page_prev" }); if(start+items<list.length) nav.push({ text:"Keyingi ▶️", callback_data:"users_page_next" }); if(nav.length) keyboard.push(nav);
-    keyboard.push([{ text:"🔙 Ortga", callback_data:"back_to_main" }]);
-    if(messageId) await bot.editMessageText(msg, { chat_id:chatId, message_id:messageId, parse_mode:"Markdown", reply_markup:{ inline_keyboard:keyboard } });
-    else await bot.sendMessage(chatId, msg, { parse_mode:"Markdown", reply_markup:{ inline_keyboard:keyboard } });
+// ========== FOYDALANUVCHILAR RO'YXATI (PAGINATION BILAN) ==========
+let usersListPage = 0;
+const USERS_PER_PAGE = 10;
+
+async function showUsersList(chatId, page, messageId = null) {
+    const usersList = getAllUsersWithDetails();
+    const start = page * USERS_PER_PAGE;
+    const end = start + USERS_PER_PAGE;
+    const pageUsers = usersList.slice(start, end);
+    const totalPages = Math.ceil(usersList.length / USERS_PER_PAGE);
+    
+    if (usersList.length === 0) {
+        const msg = "📭 Hech qanday foydalanuvchi yo'q";
+        if (messageId) {
+            await bot.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "Markdown" });
+        } else {
+            await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
+        }
+        return;
+    }
+    
+    let msg = "👥 *FOYDALANUVCHILAR*\n";
+    msg += `📄 Sahifa ${page + 1}/${totalPages}\n`;
+    msg += `👤 Jami: ${usersList.length} ta foydalanuvchi\n`;
+    msg += "━━━━━━━━━━━━━━━━━━\n\n";
+    
+    for (let i = 0; i < pageUsers.length; i++) {
+        const u = pageUsers[i];
+        const num = start + i + 1;
+        const status = u.isBlocked ? "🔴" : "🟢";
+        const carNumber = u.cars.length > 0 ? u.cars[0].carNumber : "❌ Avto yo'q";
+        msg += `${status} *${num}. ${(u.fullName || "Ismsiz").substring(0, 20)}*\n`;
+        msg += `📞 ${u.phone}\n`;
+        msg += `🚗 ${carNumber}\n`;
+        msg += `🆔 ID: ${u.userId}\n`;
+        msg += `📊 ${u.totalDiagnostics} ta diagnostika\n`;
+        msg += "━━━━━━━━━━━━━━━━━━\n";
+    }
+    
+    const keyboard = [];
+    const navButtons = [];
+    if (page > 0) navButtons.push({ text: "◀️ Oldingi", callback_data: `users_page_${page - 1}` });
+    if (page + 1 < totalPages) navButtons.push({ text: "Keyingi ▶️", callback_data: `users_page_${page + 1}` });
+    if (navButtons.length > 0) keyboard.push(navButtons);
+    keyboard.push([{ text: "🔙 Ortga", callback_data: "back_to_main" }]);
+    
+    if (messageId) {
+        await bot.editMessageText(msg, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: keyboard }
+        });
+    } else {
+        await bot.sendMessage(chatId, msg, {
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: keyboard }
+        });
+    }
 }
 
 function formatDiagnosticMessage(d) {
@@ -501,7 +608,7 @@ function formatDiagnosticMessage(d) {
 const userSessions = new Map();
 function getUserSession(id) { if(!userSessions.has(id)) userSessions.set(id,{step:null,data:{}}); return userSessions.get(id); }
 function clearUserSession(id) { userSessions.delete(id); }
-let usersListPage=0, userManagePage=0;
+let userManagePage = 0;
 
 // -------------------- BOTNI YARATISH --------------------
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
@@ -563,7 +670,7 @@ bot.on("message", async (msg) => {
     if(photo) { await bot.sendMessage(chatId, "❌ Rasm qabul qilinmaydi!", { parse_mode:"Markdown" }); return; }
     if(document) { await bot.sendMessage(chatId, "❌ Hujjat qabul qilinmaydi!", { parse_mode:"Markdown" }); return; }
     
-    // LOKATSIYA - JORIY LOKATSIYA
+    // LOKATSIYA
     if(location) {
         if(session.step === "conversation_mode" || session.data.inConversation) {
             if(isAdmin(userId)) {
@@ -835,22 +942,95 @@ bot.on("message", async (msg) => {
     
     // ADMIN MATNLI BUYRUQLAR
     if(isAdmin(userId)) {
-        if(text === "📊 Statistika") { const s=getStatistics(); await bot.sendMessage(chatId, `📊 STATISTIKA\n━━━━━━━━━━━━━━━━━━\n👥 Foydalanuvchilar: ${s.totalUsers}\n🚫 Bloklangan: ${s.blockedUsers}\n🚗 Avtomobillar: ${s.totalCars}\n🔧 Diagnostikalar: ${s.totalDiagnostics}\n💰 Diagnostika: ${s.diagnosticIncome.toLocaleString()} so'm\n🔨 Mehnat: ${s.laborIncome.toLocaleString()} so'm\n💵 Jami: ${s.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${s.totalVideos}\n💬 O'qilmagan: ${s.unreadMessages}\n📌 Versiya: V${s.currentVersion}`, { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
-        else if(text === "👥 Foydalanuvchilar") { usersListPage=0; await showUsersList(chatId,usersListPage); }
-        else if(text === "🔧 Diagnostika") { const s=getUserSession(userId); s.step="admin_add_diagnostic"; await bot.sendMessage(chatId, "🔧 Avtomobil raqamini kiriting:", { parse_mode:"Markdown", ...removeKeyboard() }); }
-        else if(text === "🎁 Bonusga yaqinlar") { const near=getNearBonusCars(); let msg="🎁 BONUSGA YAQINLAR\n━━━━━━━━━━━━━━━━━━\n"; near.forEach(c=>{ msg+=`👤 ${c.fullName}\n🚗 ${c.carNumber}\n🎁 ${c.bonusCount}/5\n📌 ${c.remaining} ta qoldi\n━━━━━━━━━━━━━━━━━━\n`; }); await bot.sendMessage(chatId, msg||"Hech kim yo'q", { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
-        else if(text === "⚠️ Xatoliklar") { const errs=getErrors(); let msg="⚠️ XATOLIKLAR\n"; errs.slice(0,10).forEach(e=>{ msg+=`\n🚗 ${e.carNumber}\n📝 ${e.errorDescription}\n📅 ${formatTashkentDateTime(e.date)}\n━━━━━━━━━━━━━━━━━━\n`; }); await bot.sendMessage(chatId, msg||"Xatoliklar yo'q", { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
-        else if(text === "📋 Diagnostika tarixi") { const diags=getAllDiagnostics(20); if(diags.length===0) await bot.sendMessage(chatId, "📭 Diagnostikalar yo'q"); else for(const d of diags.slice(0,10)) await bot.sendMessage(chatId, formatDiagnosticMessage(d), { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
-        else if(text === "📅 Bugungi") { const diags=getTodayDiagnostics(); let inc=0,lib=0,free=0; for(const d of diags) { if(d.diagnosticPrice>0) inc+=d.diagnosticPrice; else if(d.isFree) free++; if(d.laborPrice) lib+=d.laborPrice; } await bot.sendMessage(chatId, `📅 BUGUNGI\n━━━━━━━━━━━━━━━━━━\n📊 ${diags.length} ta diagnostika\n💰 Diagnostika: ${inc.toLocaleString()} so'm\n🔨 Mehnat: ${lib.toLocaleString()} so'm\n💵 Jami: ${(inc+lib).toLocaleString()} so'm\n🎉 Bepul: ${free} ta`, { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
-        else if(text === "📄 Hisobot") { await bot.sendMessage(chatId, "📄 Hisobot tayyor..."); await sendMainMenu(chatId,true,userId); }
+        if(text === "📊 Statistika") { 
+            const s=getStatistics(); 
+            await bot.sendMessage(chatId, `📊 *STATISTIKA*\n━━━━━━━━━━━━━━━━━━\n👥 Foydalanuvchilar: ${s.totalUsers}\n🚫 Bloklangan: ${s.blockedUsers}\n🚗 Avtomobillar: ${s.totalCars}\n🔧 Diagnostikalar: ${s.totalDiagnostics}\n💰 Diagnostika: ${s.diagnosticIncome.toLocaleString()} so'm\n🔨 Mehnat: ${s.laborIncome.toLocaleString()} so'm\n💵 Jami: ${s.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${s.totalVideos}\n💬 O'qilmagan: ${s.unreadMessages}\n📌 Versiya: V${s.currentVersion}`, { parse_mode:"Markdown" }); 
+            await sendMainMenu(chatId,true,userId); 
+        }
+        else if(text === "👥 Foydalanuvchilar") { 
+            usersListPage = 0; 
+            await showUsersList(chatId, usersListPage); 
+        }
+        else if(text === "🔧 Diagnostika") { 
+            const s=getUserSession(userId); 
+            s.step="admin_add_diagnostic"; 
+            await bot.sendMessage(chatId, "🔧 Avtomobil raqamini kiriting:", { parse_mode:"Markdown", ...removeKeyboard() }); 
+        }
+        else if(text === "🎁 Bonusga yaqinlar") { 
+            const near=getNearBonusCars(); 
+            let msg="🎁 *BONUSGA YAQINLAR*\n━━━━━━━━━━━━━━━━━━\n"; 
+            near.forEach(c=>{ msg+=`👤 ${c.fullName}\n🚗 ${c.carNumber}\n🎁 ${c.bonusCount}/5\n📌 ${c.remaining} ta qoldi\n━━━━━━━━━━━━━━━━━━\n`; }); 
+            await bot.sendMessage(chatId, msg||"Hech kim yo'q", { parse_mode:"Markdown" }); 
+            await sendMainMenu(chatId,true,userId); 
+        }
+        else if(text === "⚠️ Xatoliklar") { 
+            const errs=getErrors(); 
+            let msg="⚠️ *XATOLIKLAR*\n"; 
+            errs.slice(0,10).forEach(e=>{ msg+=`\n🚗 ${e.carNumber}\n📝 ${e.errorDescription}\n📅 ${formatTashkentDateTime(e.date)}\n━━━━━━━━━━━━━━━━━━\n`; }); 
+            await bot.sendMessage(chatId, msg||"Xatoliklar yo'q", { parse_mode:"Markdown" }); 
+            await sendMainMenu(chatId,true,userId); 
+        }
+        else if(text === "📋 Diagnostika tarixi") { 
+            const diags=getAllDiagnostics(20); 
+            if(diags.length===0) await bot.sendMessage(chatId, "📭 Diagnostikalar yo'q"); 
+            else for(const d of diags.slice(0,10)) await bot.sendMessage(chatId, formatDiagnosticMessage(d), { parse_mode:"Markdown" }); 
+            await sendMainMenu(chatId,true,userId); 
+        }
+        else if(text === "📅 Bugungi") { 
+            const diags=getTodayDiagnostics(); 
+            let inc=0,lib=0,free=0; 
+            for(const d of diags) { 
+                if(d.diagnosticPrice>0) inc+=d.diagnosticPrice; 
+                else if(d.isFree) free++; 
+                if(d.laborPrice) lib+=d.laborPrice; 
+            } 
+            await bot.sendMessage(chatId, `📅 *BUGUNGI*\n━━━━━━━━━━━━━━━━━━\n📊 ${diags.length} ta diagnostika\n💰 Diagnostika: ${inc.toLocaleString()} so'm\n🔨 Mehnat: ${lib.toLocaleString()} so'm\n💵 Jami: ${(inc+lib).toLocaleString()} so'm\n🎉 Bepul: ${free} ta`, { parse_mode:"Markdown" }); 
+            await sendMainMenu(chatId,true,userId); 
+        }
+        else if(text === "📄 Hisobot") { 
+            await bot.sendMessage(chatId, "📄 *Hisobot tayyorlanmoqda...*", { parse_mode: "Markdown" });
+            try {
+                const report = await generateFullReport(chatId);
+                const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
+                const filepath = path.join(REPORTS_DIR, `hisobot_${timestamp}.txt`);
+                const plainReport = report.replace(/\*/g, '').replace(/━/g, '-');
+                fs.writeFileSync(filepath, plainReport, "utf8");
+                
+                await bot.sendDocument(chatId, filepath, { 
+                    caption: `📊 *ISUZU DOCTOR HISOBOTI*\n📅 ${formatTashkentDateTime(new Date())}\n📌 Versiya: V${currentVersion}`,
+                    parse_mode: "Markdown"
+                });
+                setTimeout(() => fs.unlinkSync(filepath), 60000);
+            } catch (error) {
+                console.error("Hisobot xatolik:", error);
+                await bot.sendMessage(chatId, "❌ *Hisobot yaratishda xatolik!*", { parse_mode: "Markdown" });
+            }
+            await sendMainMenu(chatId, true, userId);
+            return;
+        }
         else if(text === "📹 Video galereya") { await showVideoGallery(chatId); await sendMainMenu(chatId,true,userId); }
         else if(text === "📤 Video yuklash") { const s=getUserSession(userId); s.step="admin_waiting_video"; s.data={}; await bot.sendMessage(chatId, "📤 Video fayl yuboring", { parse_mode:"Markdown" }); }
         else if(text === "🗑️ Video o'chirish") { await showVideoManagement(chatId); }
         else if(text === "💾 Backup") { await bot.sendMessage(chatId, "✅ Backup yaratildi", { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
         else if(text === "🔄 Tiklash") { await bot.sendMessage(chatId, "❌ Backup yo'q", { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
-        else if(text === "🚫 Foyd. boshqarish") { const all=[...getActiveUsers(),...getBlockedUsers()].filter(u=>u.cars.length>0); if(all.length===0) await bot.sendMessage(chatId, "📭 Foydalanuvchi yo'q"); else { let msg="👥 FOYDALANUVCHILAR\n━━━━━━━━━━━━━━━━━━\n"; const keyboard=[]; for(let i=0;i<Math.min(10,all.length);i++) { const u=all[i]; const st=u.isBlocked?"🔴":"🟢"; msg+=`${st} ${i+1}. ${u.cars[0].carNumber}\n`; keyboard.push([{ text:`${st} ${i+1}. ${u.cars[0].carNumber}`, callback_data:`manage_user_${u.userId}` }]); } keyboard.push([{ text:"🔙 Ortga", callback_data:"admin_manage_users_back" }]); await bot.sendMessage(chatId, msg, { parse_mode:"Markdown", reply_markup:{ inline_keyboard:keyboard } }); } }
+        else if(text === "🚫 Foyd. boshqarish") { 
+            const all=[...getActiveUsers(),...getBlockedUsers()].filter(u=>u.cars.length>0); 
+            if(all.length===0) await bot.sendMessage(chatId, "📭 Foydalanuvchi yo'q"); 
+            else { 
+                let msg="👥 *FOYDALANUVCHILARNI BOSHQARISH*\n━━━━━━━━━━━━━━━━━━\n"; 
+                const keyboard=[]; 
+                for(let i=0;i<Math.min(10,all.length);i++) { 
+                    const u=all[i]; 
+                    const st=u.isBlocked?"🔴":"🟢"; 
+                    msg+=`${st} ${i+1}. ${u.cars[0].carNumber}\n`; 
+                    keyboard.push([{ text:`${st} ${i+1}. ${u.cars[0].carNumber}`, callback_data:`manage_user_${u.userId}` }]); 
+                } 
+                keyboard.push([{ text:"🔙 Ortga", callback_data:"admin_manage_users_back" }]); 
+                await bot.sendMessage(chatId, msg, { parse_mode:"Markdown", reply_markup:{ inline_keyboard:keyboard } }); 
+            } 
+        }
         else if(text === "🔐 Xavfsizlik") { await bot.sendMessage(chatId, "🔐 Xavfsizlik paneli", { reply_markup:{ inline_keyboard:[[{text:"🔙 Ortga", callback_data:"security_back"}]] } }); }
-        else if(text === "📌 Versija") { await bot.sendMessage(chatId, `📌 Versiya: V${currentVersion}`, { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
+        else if(text === "📌 Versiya") { await bot.sendMessage(chatId, `📌 Versiya: V${currentVersion}`, { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
         else if(text === "📢 Xabar yuborish") { const s=getUserSession(userId); s.step="admin_send_message"; await bot.sendMessage(chatId, "📢 Xabarni kiriting:", { parse_mode:"Markdown", ...removeKeyboard() }); }
         else if(text && (text === "💬 Muloqotlar" || text.includes("💬 Muloqotlar"))) {
             await showAllConversations(chatId, 0);
@@ -877,6 +1057,16 @@ bot.on("callback_query", async (query) => {
         s.data.inConversation=true; 
         await bot.sendMessage(chatId, CONTACT_ADMIN_MESSAGE, { parse_mode:"Markdown", ...getLocationKeyboard() });
         return; 
+    }
+    
+    // Foydalanuvchilar sahifalari
+    if(data.startsWith("users_page_")) {
+        if(!isAdmin(userId)) return;
+        const page = parseInt(data.split("_")[2]);
+        if(isNaN(page)) return;
+        usersListPage = page;
+        await showUsersList(chatId, page, msgId);
+        return;
     }
     
     if(data.startsWith("open_conversation_")) { if(!isAdmin(userId)) return; const targetId=parseInt(data.split("_")[2]); const s=getUserSession(userId); s.step="conversation_mode"; s.data.inConversation=true; s.data.replyingToUserId=targetId; await showConversation(chatId, userId, true, targetId); return; }
