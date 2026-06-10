@@ -8,7 +8,7 @@ const os = require('os');
 const LICENSE_KEY = "ISUZU_DOCTOR_BOT_V2";
 const BOT_OWNER = "Erkinjon Shukurov";
 const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
-let currentVersion = "2.3";
+let currentVersion = "2.4";
 
 // ======================== LINKLAR ========================
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
@@ -122,6 +122,19 @@ function markMessagesAsRead(conversationId, userId) {
     }
 }
 
+// ========== ЛОКАЦИЯ УЧУН КАРТАЛАР ==========
+function getLocationButtons(lat, lng) {
+    return {
+        inline_keyboard: [
+            [{ text: "🗺️ Google Maps", url: `https://www.google.com/maps?q=${lat},${lng}` }],
+            [{ text: "🗺️ Yandex Maps", url: `https://yandex.uz/maps/?ll=${lng},${lat}&z=15&pt=${lng},${lat}` }],
+            [{ text: "🗺️ 2GIS", url: `https://2gis.uz/search/${lat},${lng}` }],
+            [{ text: "🗺️ OpenStreetMap", url: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=15` }],
+            [{ text: "🗺️ Bing Maps", url: `https://www.bing.com/maps?cp=${lat}~${lng}&lvl=15` }]
+        ]
+    };
+}
+
 async function showConversation(chatId, userId, isAdminView = false, targetUserId = null) {
     let conversation, otherUserName;
     if (isAdminView && targetUserId) {
@@ -143,11 +156,19 @@ async function showConversation(chatId, userId, isAdminView = false, targetUserI
     markMessagesAsRead(conversation.id, chatId);
     let msg = `💬 *${otherUserName} bilan muloqot*\n━━━━━━━━━━━━━━━━━━\n\n`;
     const lastMessages = conversation.messages.slice(-20);
+    
     for (const m of lastMessages) {
         const sender = m.fromUserId === conversation.userId ? "👤 Siz" : "👑 Admin";
         const time = formatTashkentDateTime(m.timestamp);
         if (m.type === "location" && m.location) {
-            msg += `📍 *${sender}* (${time}):\n   🗺️ [Xarita](https://maps.google.com/?q=${m.location.latitude},${m.location.longitude})\n`;
+            const lat = m.location.latitude;
+            const lng = m.location.longitude;
+            msg += `📍 *${sender}* (${time}): Локация\n`;
+            msg += `   🗺️ [Google Maps](https://www.google.com/maps?q=${lat},${lng})\n`;
+            msg += `   🗺️ [Yandex Maps](https://yandex.uz/maps/?ll=${lng},${lat}&z=15)\n`;
+            msg += `   🗺️ [2GIS](https://2gis.uz/search/${lat},${lng})\n`;
+            msg += `   🗺️ [OpenStreetMap](https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=15)\n`;
+            msg += `   🗺️ [Bing Maps](https://www.bing.com/maps?cp=${lat}~${lng}&lvl=15)\n`;
         } else {
             msg += `💬 *${sender}* (${time}):\n   ${m.message}\n`;
         }
@@ -460,14 +481,20 @@ bot.on("message", async (msg) => {
                 if(targetId) {
                     addAdminReply(userId, targetId, "", "location", { latitude:location.latitude, longitude:location.longitude });
                     await bot.sendMessage(chatId, "✅ Lokatsiya yuborildi!", { parse_mode:"Markdown" });
-                    await bot.sendMessage(targetId, `📍 Admin lokatsiya yubordi\n🗺️ [Xarita](https://maps.google.com/?q=${location.latitude},${location.longitude})`, { parse_mode:"Markdown", disable_web_page_preview:true });
+                    const lat = location.latitude;
+                    const lng = location.longitude;
+                    const locationMsg = `📍 *Admin lokatsiya yubordi*\n\n🗺️ [Google Maps](https://www.google.com/maps?q=${lat},${lng})\n🗺️ [Yandex Maps](https://yandex.uz/maps/?ll=${lng},${lat}&z=15)\n🗺️ [2GIS](https://2gis.uz/search/${lat},${lng})\n🗺️ [OpenStreetMap](https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=15)`;
+                    await bot.sendMessage(targetId, locationMsg, { parse_mode:"Markdown", disable_web_page_preview:true });
                     await showConversation(chatId, userId, true, targetId);
                 }
             } else {
                 addMessage(userId, ADMIN_IDS[0], "", "location", { latitude:location.latitude, longitude:location.longitude });
                 await bot.sendMessage(chatId, "✅ Lokatsiya yuborildi! Admin javob beradi.", { parse_mode:"Markdown" });
                 const uname = user ? (user.fullName || user.phone) : "Foydalanuvchi";
-                for(const aid of ADMIN_IDS) await bot.sendMessage(aid, `📍 Yangi lokatsiya\n👤 ${uname}\n🆔 ${userId}\n🗺️ [Xarita](https://maps.google.com/?q=${location.latitude},${location.longitude})\n\n💬 "💬 Muloqotlar" tugmasini bosing!`, { parse_mode:"Markdown", disable_web_page_preview:true });
+                const lat = location.latitude;
+                const lng = location.longitude;
+                const locationMsg = `📍 *Yangi lokatsiya*\n👤 ${uname}\n🆔 ${userId}\n\n🗺️ [Google Maps](https://www.google.com/maps?q=${lat},${lng})\n🗺️ [Yandex Maps](https://yandex.uz/maps/?ll=${lng},${lat}&z=15)\n🗺️ [2GIS](https://2gis.uz/search/${lat},${lng})\n🗺️ [OpenStreetMap](https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=15)\n\n💬 Javob berish uchun "💬 Muloqotlar" tugmasini bosing!`;
+                for(const aid of ADMIN_IDS) await bot.sendMessage(aid, locationMsg, { parse_mode:"Markdown", disable_web_page_preview:true });
                 session.step = "conversation_mode";
                 session.data.inConversation = true;
             }
@@ -475,7 +502,10 @@ bot.on("message", async (msg) => {
             addMessage(userId, ADMIN_IDS[0], "", "location", { latitude:location.latitude, longitude:location.longitude });
             await bot.sendMessage(chatId, "✅ Lokatsiya yuborildi! Admin javob beradi.", { parse_mode:"Markdown" });
             const uname = user ? (user.fullName || user.phone) : "Foydalanuvchi";
-            for(const aid of ADMIN_IDS) await bot.sendMessage(aid, `📍 Yangi lokatsiya\n👤 ${uname}\n🆔 ${userId}\n🗺️ [Xarita](https://maps.google.com/?q=${location.latitude},${location.longitude})\n\n💬 "💬 Muloqotlar" tugmasini bosing!`, { parse_mode:"Markdown", disable_web_page_preview:true });
+            const lat = location.latitude;
+            const lng = location.longitude;
+            const locationMsg = `📍 *Yangi lokatsiya*\n👤 ${uname}\n🆔 ${userId}\n\n🗺️ [Google Maps](https://www.google.com/maps?q=${lat},${lng})\n🗺️ [Yandex Maps](https://yandex.uz/maps/?ll=${lng},${lat}&z=15)\n🗺️ [2GIS](https://2gis.uz/search/${lat},${lng})\n🗺️ [OpenStreetMap](https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=15)\n\n💬 Javob berish uchun "💬 Muloqotlar" tugmasini bosing!`;
+            for(const aid of ADMIN_IDS) await bot.sendMessage(aid, locationMsg, { parse_mode:"Markdown", disable_web_page_preview:true });
             session.step = "conversation_mode";
             session.data.inConversation = true;
         }
@@ -558,14 +588,14 @@ bot.on("message", async (msg) => {
             if(targetId && text && !text.startsWith("/")) {
                 addAdminReply(userId, targetId, text, "text", null);
                 await bot.sendMessage(chatId, "✅ Javob yuborildi!", { parse_mode:"Markdown" });
-                await bot.sendMessage(targetId, `👑 Admin javobi:\n\n${text}`, { parse_mode:"Markdown" });
+                await bot.sendMessage(targetId, `👑 *Admin javobi:*\n\n${text}`, { parse_mode:"Markdown" });
                 await showConversation(chatId, userId, true, targetId);
             }
         } else if(text && !text.startsWith("/")) {
             addMessage(userId, ADMIN_IDS[0], text, "text", null);
             await bot.sendMessage(chatId, "✅ Xabar yuborildi! Admin javob beradi.", { parse_mode:"Markdown" });
             const uname = user ? (user.fullName || user.phone) : "Foydalanuvchi";
-            for(const aid of ADMIN_IDS) await bot.sendMessage(aid, `💬 Yangi xabar\n👤 ${uname}\n📝 ${text}\n\n💬 "💬 Muloqotlar" tugmasini bosing!`, { parse_mode:"Markdown" });
+            for(const aid of ADMIN_IDS) await bot.sendMessage(aid, `💬 *Yangi xabar*\n👤 ${uname}\n📝 ${text}\n\n💬 "💬 Muloqotlar" tugmasini bosing!`, { parse_mode:"Markdown" });
         }
         return;
     }
