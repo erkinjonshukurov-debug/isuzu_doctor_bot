@@ -8,12 +8,27 @@ const os = require('os');
 const LICENSE_KEY = "ISUZU_DOCTOR_BOT_V2";
 const BOT_OWNER = "Erkinjon Shukurov";
 const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
-let currentVersion = "2.4";
+let currentVersion = "2.5";
 
 // ======================== LINKLAR ========================
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
 const INSTAGRAM_LINK = "https://www.instagram.com/isuzudoctor.979247888/";
 const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy";
+
+// ======================== ADMIN BILAN BOG'LANISH UCHUN XABAR ========================
+const CONTACT_ADMIN_MESSAGE = `
+Assalomu alaykum! 👋
+
+🚗 *Isuzu Doctor* xizmatiga savollaringizni berishingiz mumkin.
+
+✅ Doctor xabarni yuborishingiz bilan sizga javob beradi.
+
+📝 Iltimos, savolingizni yoki muammoingizni yozib qoldiring.
+
+📍 Lokatsiya yuborishingiz ham mumkin.
+
+🔙 "Bekor qilish" tugmasini bossangiz, asosiy menyuga qaytasiz.
+`;
 
 // -------------------- VAQT ZONASI --------------------
 function getTashkentTime(date) {
@@ -122,12 +137,30 @@ function markMessagesAsRead(conversationId, userId) {
     }
 }
 
-// ========== ЛОКАЦИЯ УЧУН КАРТАЛАР ==========
+// ========== MUHOQOTLARNI O'CHIRISH FUNKSIYASI ==========
+function deleteConversation(conversationId, adminId) {
+    const index = conversations.findIndex(c => c.id === conversationId);
+    if (index === -1) return { success: false, message: "❌ Muloqot topilmadi!" };
+    
+    const conversation = conversations[index];
+    const user = getUserByUserId(conversation.userId);
+    const userName = user ? (user.fullName || user.phone || `ID:${conversation.userId}`) : "Noma'lum foydalanuvchi";
+    
+    conversations.splice(index, 1);
+    saveConversations();
+    
+    addSecurityLog("CONVERSATION_DELETED", adminId, `Muloqot o'chirildi: ${userName} (userID: ${conversation.userId})`);
+    console.log(`🗑️ Admin ${adminId} tomonidan ${userName} bilan muloqot o'chirildi`);
+    
+    return { success: true, message: `✅ "${userName}" bilan muloqot o'chirildi!` };
+}
+
+// ========== LOKATSIYA UCHUN KARTA TUGMALARI ==========
 function getLocationButtons(lat, lng) {
     return {
         inline_keyboard: [
             [{ text: "🗺️ Google Maps", url: `https://www.google.com/maps?q=${lat},${lng}` }],
-            [{ text: "🗺️ Yandex Maps", url: `https://yandex.uz/maps/?ll=${lng},${lat}&z=15&pt=${lng},${lat}` }],
+            [{ text: "🗺️ Yandex Maps", url: `https://yandex.uz/maps/?ll=${lng},${lat}&z=15` }],
             [{ text: "🗺️ 2GIS", url: `https://2gis.uz/search/${lat},${lng}` }],
             [{ text: "🗺️ OpenStreetMap", url: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=15` }],
             [{ text: "🗺️ Bing Maps", url: `https://www.bing.com/maps?cp=${lat}~${lng}&lvl=15` }]
@@ -147,7 +180,7 @@ async function showConversation(chatId, userId, isAdminView = false, targetUserI
     }
     
     if (!conversation || conversation.messages.length === 0) {
-        const msg = isAdminView ? "💬 *Hali xabar yo'q*" : "💬 *Admin bilan bog'lanish*\n\nXabaringizni yozing.\n📍 Lokatsiya yuborish mumkin.";
+        const msg = isAdminView ? "💬 *Hali xabar yo'q*\n\nFoydalanuvchiga xabar yozishingiz mumkin." : CONTACT_ADMIN_MESSAGE;
         const keyboard = isAdminView ? null : { reply_markup: { keyboard: [[{text:"📍 Lokatsiya yuborish", request_location:true}],[{text:"🔙 Bekor qilish"}]], resize_keyboard:true } };
         await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", ...keyboard });
         return;
@@ -176,8 +209,17 @@ async function showConversation(chatId, userId, isAdminView = false, targetUserI
     }
     
     if (isAdminView) {
-        msg += "\n✏️ *Javob yozing*\n📍 Lokatsiya yuborish mumkin\n🔙 Muloqotlar ro'yxati";
-        const keyboard = { reply_markup: { keyboard: [[{text:"📍 Lokatsiya yuborish", request_location:true}],[{text:"🔙 Muloqotlar ro'yxati"}]], resize_keyboard:true } };
+        msg += "\n✏️ *Javob yozing*\n📍 Lokatsiya yuborish mumkin\n🗑️ Muloqotni o'chirish - tugmasini bosing\n🔙 Muloqotlar ro'yxati";
+        const keyboard = { 
+            reply_markup: { 
+                keyboard: [
+                    [{ text: "📍 Lokatsiya yuborish", request_location: true }],
+                    [{ text: "🗑️ Bu muloqotni o'chirish" }],
+                    [{ text: "🔙 Muloqotlar ro'yxati" }]
+                ], 
+                resize_keyboard: true 
+            } 
+        };
         await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", disable_web_page_preview: true, ...keyboard });
     } else {
         msg += "\n✏️ *Xabaringizni yozing*\n📍 Lokatsiya yuborish mumkin\n🔙 Asosiy menyu";
@@ -197,7 +239,7 @@ async function showAllConversations(chatId, page = 0) {
         return;
     }
     
-    let msg = `💬 *MUHOQOTLAR RO'YXATI*\n━━━━━━━━━━━━━━━━━━\n📊 Jami: ${all.length} ta\n📄 Sahifa ${page+1}/${Math.ceil(all.length/itemsPerPage)}\n━━━━━━━━━━━━━━━━━━\n\n`;
+    let msg = `💬 *MUHOQOTLAR RO'YXATI*\n━━━━━━━━━━━━━━━━━━\n📊 Jami: ${all.length} ta muloqot\n📄 Sahifa ${page+1}/${Math.ceil(all.length/itemsPerPage)}\n━━━━━━━━━━━━━━━━━━\n\n`;
     const keyboard = [];
     for (let i=0; i<pageConvs.length; i++) {
         const conv = pageConvs[i];
@@ -208,8 +250,12 @@ async function showAllConversations(chatId, page = 0) {
         const unread = conv.adminUnreadCount || 0;
         const unreadIcon = unread > 0 ? `🔴 ${unread}🆕 ` : "";
         const num = start + i + 1;
-        msg += `${num}. ${unreadIcon}*${userName.substring(0,25)}*\n   📝 ${lastMsgText}\n   📅 ${lastMsg ? formatTashkentDateTime(lastMsg.timestamp) : "-"}\n━━━━━━━━━━━━━━━━━━\n`;
-        keyboard.push([{ text: `💬 ${num}. ${userName.substring(0,20)}`, callback_data: `open_conversation_${conv.userId}` }]);
+        const msgCount = conv.messages.length;
+        msg += `${num}. ${unreadIcon}*${userName.substring(0,25)}*\n   📝 ${lastMsgText}\n   📅 ${lastMsg ? formatTashkentDateTime(lastMsg.timestamp) : "-"}\n   💬 ${msgCount} ta xabar\n━━━━━━━━━━━━━━━━━━\n`;
+        keyboard.push([
+            { text: `💬 ${num}. Javob berish`, callback_data: `open_conversation_${conv.userId}` },
+            { text: `🗑️ ${num}. O'chirish`, callback_data: `delete_conv_${conv.id}` }
+        ]);
     }
     const nav = [];
     if (page > 0) nav.push({ text: "◀️ Oldingi", callback_data: `conversations_page_${page-1}` });
@@ -323,6 +369,17 @@ function getAllUsersWithDetails() { return users.filter(u=>!u.isAdmin).map(u=>({
 function blockUser(id) { const u=getUserByUserId(id); if(u && !u.isAdmin) { u.isBlocked=true; saveUsers(); return { success:true, message:"Foydalanuvchi bloklandi" }; } return { success:false, message:"Xatolik" }; }
 function unblockUser(id) { const u=getUserByUserId(id); if(u) { u.isBlocked=false; saveUsers(); return { success:true, message:"Foydalanuvchi blokdan ochildi" }; } return { success:false, message:"Xatolik" }; }
 function deleteUser(id) { const idx=users.findIndex(u=>u.userId===id); if(idx!==-1 && !users[idx].isAdmin) { users.splice(idx,1); saveUsers(); return { success:true, message:"Foydalanuvchi o'chirildi" }; } return { success:false, message:"Xatolik" }; }
+function getActiveUsers() { return users.filter(u=>!u.isAdmin && !u.isBlocked); }
+function getBlockedUsers() { return users.filter(u=>!u.isAdmin && u.isBlocked); }
+
+function addSecurityLog(action, userId, details) {
+    adminSettings.securityLog.unshift({ id: Date.now(), action, userId, details, date: new Date().toISOString() });
+    if (adminSettings.securityLog.length > 100) adminSettings.securityLog = adminSettings.securityLog.slice(0, 100);
+    saveAdminSettings();
+}
+
+function saveAdminSettings() { fs.writeFileSync(ADMIN_SETTINGS_FILE, JSON.stringify(adminSettings, null, 2)); }
+function loadAdminSettings() { try { if(fs.existsSync(ADMIN_SETTINGS_FILE)) adminSettings = JSON.parse(fs.readFileSync(ADMIN_SETTINGS_FILE, "utf8")); } catch(e) { adminSettings = { allowedEditors: [], securityLog: [] }; } }
 
 async function sendNotificationToAllUsers(msg,keyboard=null) { let s=0,f=0; for(const u of users.filter(u=>!u.isAdmin && !u.isBlocked)) { try { await bot.sendMessage(u.userId, msg, { parse_mode:"Markdown", reply_markup:keyboard }); s++; } catch(e) { f++; } } return { success:s, fail:f }; }
 
@@ -519,6 +576,21 @@ bot.on("message", async (msg) => {
         return;
     }
     
+    // ADMIN MULOQOTNI O'CHIRISH
+    if(isAdmin(userId) && text === "🗑️ Bu muloqotni o'chirish") {
+        const targetId = session.data.replyingToUserId;
+        if(targetId) {
+            const conv = conversations.find(c => c.userId === targetId);
+            if(conv) {
+                const result = deleteConversation(conv.id, userId);
+                await bot.sendMessage(chatId, result.message, { parse_mode:"Markdown" });
+                await showAllConversations(chatId, 0);
+                clearUserSession(userId);
+                return;
+            }
+        }
+    }
+    
     // ADMIN VIDEO YUKLASH
     if(session.step === "admin_waiting_video") {
         if(!isAdmin(userId)) return;
@@ -585,11 +657,15 @@ bot.on("message", async (msg) => {
     if(session.step === "conversation_mode" || session.data.inConversation) {
         if(isAdmin(userId)) {
             const targetId = session.data.replyingToUserId;
-            if(targetId && text && !text.startsWith("/")) {
+            if(targetId && text && !text.startsWith("/") && text !== "🗑️ Bu muloqotni o'chirish" && text !== "🔙 Muloqotlar ro'yxati") {
                 addAdminReply(userId, targetId, text, "text", null);
                 await bot.sendMessage(chatId, "✅ Javob yuborildi!", { parse_mode:"Markdown" });
                 await bot.sendMessage(targetId, `👑 *Admin javobi:*\n\n${text}`, { parse_mode:"Markdown" });
                 await showConversation(chatId, userId, true, targetId);
+            } else if(text === "🔙 Muloqotlar ro'yxati") {
+                await showAllConversations(chatId, 0);
+                clearUserSession(userId);
+                return;
             }
         } else if(text && !text.startsWith("/")) {
             addMessage(userId, ADMIN_IDS[0], text, "text", null);
@@ -704,12 +780,10 @@ bot.on("message", async (msg) => {
         else if(text === "🔐 Xavfsizlik") { await bot.sendMessage(chatId, "🔐 Xavfsizlik paneli", { reply_markup:{ inline_keyboard:[[{text:"🔙 Ortga", callback_data:"security_back"}]] } }); }
         else if(text === "📌 Versiya") { await bot.sendMessage(chatId, `📌 Versiya: V${currentVersion}`, { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
         else if(text === "📢 Xabar yuborish") { const s=getUserSession(userId); s.step="admin_send_message"; await bot.sendMessage(chatId, "📢 Xabarni kiriting:", { parse_mode:"Markdown", ...removeKeyboard() }); }
-        // ==================== TUZATILGAN QISM ====================
         else if(text && (text === "💬 Muloqotlar" || text.includes("💬 Muloqotlar"))) {
             await showAllConversations(chatId, 0);
             return;
         }
-        // ==================== ТУЗАТИШ ТУГАДИ ====================
         else if(text === "❌ Asosiy menyu") { clearUserSession(userId); userManagePage=0; usersListPage=0; await sendMainMenu(chatId,true,userId); }
         else if(!session.step) { await bot.sendMessage(chatId, "❌ Tushunarsiz buyruq!", { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
         return;
@@ -724,9 +798,26 @@ bot.on("callback_query", async (query) => {
     await bot.answerCallbackQuery(query.id);
     const user = getUserByUserId(userId);
     
-    if(data === "user_contact_admin") { const s=getUserSession(userId); s.step="conversation_mode"; s.data.inConversation=true; await bot.sendMessage(chatId, "💬 Xabaringizni yozing", { parse_mode:"Markdown", ...getLocationKeyboard() }); return; }
+    // Admin bilan bog'lanish - avtomatik xabar bilan
+    if(data === "user_contact_admin") { 
+        const s=getUserSession(userId); 
+        s.step="conversation_mode"; 
+        s.data.inConversation=true; 
+        // Avtomatik xabar yuborish
+        await bot.sendMessage(chatId, CONTACT_ADMIN_MESSAGE, { parse_mode:"Markdown", ...getLocationKeyboard() });
+        return; 
+    }
+    
     if(data.startsWith("open_conversation_")) { if(!isAdmin(userId)) return; const targetId=parseInt(data.split("_")[2]); const s=getUserSession(userId); s.step="conversation_mode"; s.data.inConversation=true; s.data.replyingToUserId=targetId; await showConversation(chatId, userId, true, targetId); return; }
     if(data.startsWith("conversations_page_")) { if(!isAdmin(userId)) return; const page=parseInt(data.split("_")[2]); await showAllConversations(chatId,page); return; }
+    if(data.startsWith("delete_conv_")) { 
+        if(!isAdmin(userId)) return; 
+        const convId = parseInt(data.split("_")[2]); 
+        const result = deleteConversation(convId, userId); 
+        await bot.answerCallbackQuery(query.id, { text: result.message, show_alert: true }); 
+        await showAllConversations(chatId, 0); 
+        return; 
+    }
     if(data.startsWith("delete_video_")) { if(!isAdmin(userId)) return; const vid=parseInt(data.split("_")[2]); deleteVideo(vid); await bot.sendMessage(chatId, "✅ Video o'chirildi"); await showVideoManagement(chatId); return; }
     if(data.startsWith("watch_video_")) { const vid=parseInt(data.split("_")[2]); const v=videoList.find(v=>v.id===vid); if(v && v.fileId) await bot.sendVideo(chatId, v.fileId, { caption:`📹 ${v.title}` }); else await bot.sendMessage(chatId, "❌ Video topilmadi"); return; }
     if(data === "back_to_main") { clearUserSession(userId); await sendMainMenu(chatId, isAdmin(userId), userId); return; }
@@ -753,6 +844,7 @@ bot.on("callback_query", async (query) => {
 loadData();
 loadVideos();
 loadConversations();
+loadAdminSettings();
 console.log("=".repeat(50));
 console.log(`🚗 ISUZU DOCTOR BOT ISHLADI! Versiya: V${currentVersion}`);
 console.log(`👑 Adminlar: ${ADMIN_IDS.join(", ")}`);
