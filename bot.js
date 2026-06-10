@@ -1,6 +1,3 @@
-// ==================== TO'LIQ ISUZU DOCTOR BOT KODI ====================
-// 1-QISM: KONFIGURATSIYA VA MUHOQOT TIZIMI
-
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs');
@@ -27,11 +24,6 @@ function getTashkentTime(date) {
 function formatTashkentDateTime(date) {
     const d = getTashkentTime(date);
     return d.toLocaleString('uz-UZ', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function formatMonthName(year, month) {
-    const months = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'];
-    return `${months[month-1]} ${year}`;
 }
 
 // -------------------- KARTA MA'LUMOTLARI --------------------
@@ -121,6 +113,15 @@ function getAllConversations() {
     });
 }
 
+function markMessagesAsRead(conversationId, userId) {
+    const conv = conversations.find(c => c.id === conversationId);
+    if (conv) {
+        if (userId === conv.userId) conv.userUnreadCount = 0;
+        else conv.adminUnreadCount = 0;
+        saveConversations();
+    }
+}
+
 async function showConversation(chatId, userId, isAdminView = false, targetUserId = null) {
     let conversation, otherUserName;
     if (isAdminView && targetUserId) {
@@ -161,15 +162,6 @@ async function showConversation(chatId, userId, isAdminView = false, targetUserI
         msg += "\n✏️ *Xabaringizni yozing*\n📍 Lokatsiya yuborish mumkin\n🔙 Asosiy menyu";
         const keyboard = { reply_markup: { keyboard: [[{text:"📍 Lokatsiya yuborish", request_location:true}],[{text:"🔙 Asosiy menyu"}]], resize_keyboard:true } };
         await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", disable_web_page_preview: true, ...keyboard });
-    }
-}
-
-function markMessagesAsRead(conversationId, userId) {
-    const conv = conversations.find(c => c.id === conversationId);
-    if (conv) {
-        if (userId === conv.userId) conv.userUnreadCount = 0;
-        else conv.adminUnreadCount = 0;
-        saveConversations();
     }
 }
 
@@ -215,8 +207,11 @@ function getActiveVideos() { return videoList.filter(v=>v.isActive); }
 function deleteVideo(videoId) { const idx = videoList.findIndex(v=>v.id===videoId); if(idx!==-1) videoList.splice(idx,1); saveVideos(); }
 
 // -------------------- DATABASE --------------------
-let users = [], diagnostics = [], errors = [], adminSettings = { allowedEditors: [], securityLog: [] }, versionHistory = [];
+let users = [], diagnostics = [], errors = [], adminSettings = { allowedEditors: [], securityLog: [] };
 let uniqueInstallId = crypto.createHash('sha256').update(os.hostname() + LICENSE_KEY).digest('hex').substring(0,16);
+
+function ensureDir() { if(!fs.existsSync(VOLUME_PATH)) fs.mkdirSync(VOLUME_PATH,{recursive:true}); if(!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR,{recursive:true}); if(!fs.existsSync(REPORTS_DIR)) fs.mkdirSync(REPORTS_DIR,{recursive:true}); }
+ensureDir();
 
 function loadData() {
     try {
@@ -304,9 +299,9 @@ function getErrors() { return errors.slice(-50).reverse(); }
 function getNearBonusCars() { const near=[]; for(const u of users) { if(u.isAdmin) continue; for(const c of u.cars) { if(c.bonusCount>=3 && c.bonusCount<5) near.push({ fullName:u.fullName, phone:u.phone, carNumber:c.carNumber, bonusCount:c.bonusCount, remaining:5-c.bonusCount }); } } return near; }
 function getAllUsersWithDetails() { return users.filter(u=>!u.isAdmin).map(u=>({ userId:u.userId, fullName:u.fullName||"Ismsiz", phone:u.phone, cars:u.cars, totalDiagnostics:u.totalDiagnosticsAll||0, isBlocked:u.isBlocked||false })); }
 
-function blockUser(id) { const u=getUserByUserId(id); if(u) { u.isBlocked=true; saveUsers(); return { success:true, message:"Bloklandi" }; } return { success:false }; }
-function unblockUser(id) { const u=getUserByUserId(id); if(u) { u.isBlocked=false; saveUsers(); return { success:true, message:"Blokdan ochildi" }; } return { success:false }; }
-function deleteUser(id) { const idx=users.findIndex(u=>u.userId===id); if(idx!==-1 && !users[idx].isAdmin) { users.splice(idx,1); saveUsers(); return { success:true, message:"O'chirildi" }; } return { success:false }; }
+function blockUser(id) { const u=getUserByUserId(id); if(u && !u.isAdmin) { u.isBlocked=true; saveUsers(); return { success:true, message:"Foydalanuvchi bloklandi" }; } return { success:false, message:"Xatolik" }; }
+function unblockUser(id) { const u=getUserByUserId(id); if(u) { u.isBlocked=false; saveUsers(); return { success:true, message:"Foydalanuvchi blokdan ochildi" }; } return { success:false, message:"Xatolik" }; }
+function deleteUser(id) { const idx=users.findIndex(u=>u.userId===id); if(idx!==-1 && !users[idx].isAdmin) { users.splice(idx,1); saveUsers(); return { success:true, message:"Foydalanuvchi o'chirildi" }; } return { success:false, message:"Xatolik" }; }
 
 async function sendNotificationToAllUsers(msg,keyboard=null) { let s=0,f=0; for(const u of users.filter(u=>!u.isAdmin && !u.isBlocked)) { try { await bot.sendMessage(u.userId, msg, { parse_mode:"Markdown", reply_markup:keyboard }); s++; } catch(e) { f++; } } return { success:s, fail:f }; }
 
@@ -336,7 +331,7 @@ function getAdminReplyKeyboard() {
         ["🗑️ Video o'chirish", "💾 Backup"],
         ["🔄 Tiklash", "🚫 Foyd. boshqarish"],
         ["🔐 Xavfsizlik", "📌 Versiya"],
-        ["📢 Xabar yuborish", "💬 Muloqotlar"+badge],
+        ["📢 Xabar yuborish", "💬 Muloqotlar" + badge],
         ["❌ Asosiy menyu"]
     ], resize_keyboard:true } };
 }
@@ -374,6 +369,18 @@ async function showVideoManagement(chatId, page=0) {
     await bot.sendMessage(chatId, msg, { parse_mode:"Markdown", reply_markup:{ inline_keyboard:keyboard } });
 }
 
+async function showUsersList(chatId, page, messageId=null) {
+    const list = getAllUsersWithDetails();
+    const items=10, start=page*items, pageUsers=list.slice(start,start+items);
+    if(list.length===0) { await bot.sendMessage(chatId, "📭 Foydalanuvchi yo'q"); return; }
+    let msg=`👥 FOYDALANUVCHILAR\n📄 Sahifa ${page+1}/${Math.ceil(list.length/items)}\n━━━━━━━━━━━━━━━━━━\n\n`;
+    for(let i=0;i<pageUsers.length;i++) { const u=pageUsers[i]; const num=start+i+1; const st=u.isBlocked?"🔴":"🟢"; msg+=`${st} *${num}. ${u.fullName.substring(0,20)}*\n📞 ${u.phone}\n🚗 ${u.cars[0]?.carNumber||"❌"}\n━━━━━━━━━━━━━━━━━━\n`; }
+    const keyboard=[]; const nav=[]; if(page>0) nav.push({ text:"◀️ Oldingi", callback_data:"users_page_prev" }); if(start+items<list.length) nav.push({ text:"Keyingi ▶️", callback_data:"users_page_next" }); if(nav.length) keyboard.push(nav);
+    keyboard.push([{ text:"🔙 Ortga", callback_data:"back_to_main" }]);
+    if(messageId) await bot.editMessageText(msg, { chat_id:chatId, message_id:messageId, parse_mode:"Markdown", reply_markup:{ inline_keyboard:keyboard } });
+    else await bot.sendMessage(chatId, msg, { parse_mode:"Markdown", reply_markup:{ inline_keyboard:keyboard } });
+}
+
 function formatDiagnosticMessage(d) {
     const price = (d.diagnosticPrice||0) + (d.laborPrice||0);
     return `🔧 *DIAGNOSTIKA*\n\n🚗 ${d.carNumber}\n📅 ${formatTashkentDateTime(d.date)}\n\n📝 *Ishlar:*\n${d.workDescription}\n\n💰 *Narx:* ${price.toLocaleString()} so'm${d.isFree ? "\n🎉 BEPUL!" : ""}`;
@@ -387,9 +394,9 @@ let usersListPage=0, userManagePage=0;
 
 // -------------------- BOTNI YARATISH --------------------
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-bot.deleteWebHook();
+bot.deleteWebHook().catch(e=>console.log(e.message));
 
-// -------------------- START --------------------
+// -------------------- /start --------------------
 bot.onText(/\/start/, async (msg) => {
     const chatId=msg.chat.id, userId=msg.from.id, fn=msg.from.first_name||"", ln=msg.from.last_name||"", un=msg.from.username||"";
     clearUserSession(userId);
@@ -439,7 +446,7 @@ bot.on("message", async (msg) => {
     const session = getUserSession(userId);
     const user = getUserByUserId(userId);
     
-    // VIDEO BLOKLASH
+    // VIDEO, OVOZ, RASM, HUJJAT BLOKLASH
     if(video) { await bot.sendMessage(chatId, "❌ Video qabul qilinmaydi! Faqat matn yoki lokatsiya.", { parse_mode:"Markdown" }); return; }
     if(voice) { await bot.sendMessage(chatId, "❌ Ovozli xabar qabul qilinmaydi! Matn yozing.", { parse_mode:"Markdown" }); return; }
     if(photo) { await bot.sendMessage(chatId, "❌ Rasm qabul qilinmaydi!", { parse_mode:"Markdown" }); return; }
@@ -667,7 +674,12 @@ bot.on("message", async (msg) => {
         else if(text === "🔐 Xavfsizlik") { await bot.sendMessage(chatId, "🔐 Xavfsizlik paneli", { reply_markup:{ inline_keyboard:[[{text:"🔙 Ortga", callback_data:"security_back"}]] } }); }
         else if(text === "📌 Versiya") { await bot.sendMessage(chatId, `📌 Versiya: V${currentVersion}`, { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
         else if(text === "📢 Xabar yuborish") { const s=getUserSession(userId); s.step="admin_send_message"; await bot.sendMessage(chatId, "📢 Xabarni kiriting:", { parse_mode:"Markdown", ...removeKeyboard() }); }
-        else if(text === "💬 Muloqotlar") { await showAllConversations(chatId, 0); }
+        // ==================== TUZATILGAN QISM ====================
+        else if(text && (text === "💬 Muloqotlar" || text.includes("💬 Muloqotlar"))) {
+            await showAllConversations(chatId, 0);
+            return;
+        }
+        // ==================== ТУЗАТИШ ТУГАДИ ====================
         else if(text === "❌ Asosiy menyu") { clearUserSession(userId); userManagePage=0; usersListPage=0; await sendMainMenu(chatId,true,userId); }
         else if(!session.step) { await bot.sendMessage(chatId, "❌ Tushunarsiz buyruq!", { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
         return;
