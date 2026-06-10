@@ -8,7 +8,7 @@ const os = require('os');
 const LICENSE_KEY = "ISUZU_DOCTOR_BOT_V2";
 const BOT_OWNER = "Erkinjon Shukurov";
 const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
-let currentVersion = "3.2";
+let currentVersion = "3.3";
 
 // ======================== LINKLAR ========================
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
@@ -42,13 +42,21 @@ function formatTashkentDateTime(date) {
 }
 
 function formatDateSimple(date) {
-    const d = new Date(date);
-    return `${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}.${d.getFullYear()}`;
+    if (!date) return "❌ Sana yo'q";
+    try {
+        const d = new Date(date);
+        if (isNaN(d.getTime())) return "❌ Xato sana";
+        return `${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}.${d.getFullYear()}`;
+    } catch(e) { return "❌ Xato sana"; }
 }
 
 function formatTimeSimple(date) {
-    const d = new Date(date);
-    return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+    if (!date) return "❌ Vaqt yo'q";
+    try {
+        const d = new Date(date);
+        if (isNaN(d.getTime())) return "❌ Xato vaqt";
+        return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+    } catch(e) { return "❌ Xato vaqt"; }
 }
 
 // -------------------- KARTA MA'LUMOTLARI --------------------
@@ -293,7 +301,6 @@ function loadData() {
         if(fs.existsSync(ERRORS_FILE)) errors = JSON.parse(fs.readFileSync(ERRORS_FILE,"utf8"));
         else errors = [];
         
-        // Har bir foydalanuvchini to'g'irlash
         users.forEach(u => {
             if(u.isBlocked===undefined) u.isBlocked=false;
             if(!u.cars) u.cars=[];
@@ -412,7 +419,69 @@ function getAllDiagnostics(limit=500) { return diagnostics.slice(-limit).reverse
 function getErrors() { return errors.slice(-50).reverse(); }
 function getNearBonusCars() { const near=[]; for(const u of users) { if(u.isAdmin) continue; for(const c of u.cars) { if(c.bonusCount>=3 && c.bonusCount<5) near.push({ fullName:u.fullName, phone:u.phone, carNumber:c.carNumber, bonusCount:c.bonusCount, remaining:5-c.bonusCount }); } } return near; }
 
-// ========== FOYDALANUVCHILAR RO'YXATI (TARTIBLANGAN - YANGI YUQORIDA) ==========
+// ========== YAROQSIZ FOYDALANUVCHILARNI O'CHIRISH FUNKSIYASI ==========
+function deleteInvalidUsers() {
+    let deletedCount = 0;
+    const beforeCount = users.length;
+    
+    const validUsers = users.filter(u => {
+        // Adminlarni o'chirmaymiz
+        if (u.isAdmin === true) return true;
+        
+        // Telefon raqami mavjudligini tekshirish
+        const hasValidPhone = u.phone && u.phone !== "Telefon yo'q" && u.phone !== "" && u.phone !== null && u.phone !== "null";
+        const hasCars = u.cars && u.cars.length > 0;
+        const hasValidName = u.fullName && u.fullName !== "Ismsiz" && u.fullName !== "";
+        
+        // Agar telefon raqami yo'q va avtomobili ham yo'q bo'lsa - o'chiramiz
+        if (!hasValidPhone && !hasCars) {
+            console.log(`🗑️ O'chirilmoqda: User ID: ${u.userId}, Telefon: ${u.phone}, Ism: ${u.fullName}`);
+            deletedCount++;
+            return false;
+        }
+        
+        return true;
+    });
+    
+    users = validUsers;
+    
+    if (deletedCount > 0) {
+        saveUsers();
+        console.log(`✅ ${deletedCount} ta yaroqsiz foydalanuvchi o'chirildi! (${beforeCount} -> ${users.length})`);
+    }
+    
+    return deletedCount;
+}
+
+function cleanAllInvalidUsers() {
+    console.log("🧹 Yaroqsiz foydalanuvchilarni tozalash boshlandi...");
+    let deleted = deleteInvalidUsers();
+    
+    // Qo'shimcha tekshiruv
+    let additionalDeleted = 0;
+    for (let i = users.length - 1; i >= 0; i--) {
+        const u = users[i];
+        if (u.isAdmin) continue;
+        
+        const hasValidPhone = u.phone && u.phone !== "Telefon yo'q" && u.phone !== "" && u.phone !== null;
+        const hasCars = u.cars && u.cars.length > 0;
+        
+        if (!hasValidPhone && !hasCars) {
+            users.splice(i, 1);
+            additionalDeleted++;
+        }
+    }
+    
+    if (additionalDeleted > 0) {
+        saveUsers();
+        console.log(`✅ Qo'shimcha ${additionalDeleted} ta yaroqsiz foydalanuvchi o'chirildi!`);
+    }
+    
+    console.log(`✅ Tozalash tugadi. Hozirgi foydalanuvchilar soni: ${users.length}`);
+    return deleted + additionalDeleted;
+}
+
+// ========== FOYDALANUVCHILAR RO'YXATI (TARTIBLANGAN) ==========
 function getAllUsersWithDetails() {
     const regularUsers = users.filter(u => u.isAdmin !== true);
     const usersList = [];
@@ -585,7 +654,7 @@ function getAdminReplyKeyboard() {
         ["🔄 Tiklash", "🚫 Foyd. boshqarish"],
         ["🔐 Xavfsizlik", "📌 Versiya"],
         ["📢 Xabar yuborish", "💬 Muloqotlar" + badge],
-        ["❌ Asosiy menyu"]
+        ["🧹 Tozalash", "❌ Asosiy menyu"]
     ], resize_keyboard:true } };
 }
 
@@ -622,7 +691,7 @@ async function showVideoManagement(chatId, page=0) {
     await bot.sendMessage(chatId, msg, { parse_mode:"Markdown", reply_markup:{ inline_keyboard:keyboard } });
 }
 
-// ========== FOYDALANUVCHILAR RO'YXATI (TARTIBLANGAN) ==========
+// ========== FOYDALANUVCHILAR RO'YXATI ==========
 let usersListPage = 0;
 const USERS_PER_PAGE = 10;
 
@@ -687,7 +756,7 @@ async function showUsersList(chatId, page, messageId = null) {
     }
 }
 
-// ========== FOYDALANUVCHILARNI BOSHQARISH (TARTIBLANGAN) ==========
+// ========== FOYDALANUVCHILARNI BOSHQARISH ==========
 let userManagePage = 0;
 const USERS_MANAGE_PER_PAGE = 10;
 
@@ -708,7 +777,6 @@ async function showUsersForManage(chatId, page, messageId = null) {
         }
     }
     
-    // REGISTRATSIYA SANASI BO'YICHA TARTIBLASH
     allUsers.sort((a, b) => {
         const dateA = new Date(a.registeredDate);
         const dateB = new Date(b.registeredDate);
@@ -1295,6 +1363,20 @@ bot.on("message", async (msg) => {
         else if (text === "🔐 Xavfsizlik") { await bot.sendMessage(chatId, "🔐 Xavfsizlik paneli", { reply_markup: { inline_keyboard: [[{ text: "🔙 Ortga", callback_data: "security_back" }]] } }); }
         else if (text === "📌 Versiya") { await bot.sendMessage(chatId, `📌 Versiya: V${currentVersion}`, { parse_mode: "Markdown" }); await sendMainMenu(chatId, true, userId); }
         else if (text === "📢 Xabar yuborish") { const s = getUserSession(userId); s.step = "admin_send_message"; await bot.sendMessage(chatId, "📢 Xabarni kiriting:", { parse_mode: "Markdown", ...removeKeyboard() }); }
+        else if (text === "🧹 Tozalash") {
+            if (!isAdmin(userId)) return;
+            await bot.sendMessage(chatId, "🧹 *Yaroqsiz foydalanuvchilar tozalanmoqda...*", { parse_mode: "Markdown" });
+            const deletedCount = cleanAllInvalidUsers();
+            if (deletedCount > 0) {
+                await bot.sendMessage(chatId, `✅ *${deletedCount} ta yaroqsiz foydalanuvchi o'chirildi!*\n\n📊 Hozirgi foydalanuvchilar soni: ${users.length}`, { parse_mode: "Markdown" });
+            } else {
+                await bot.sendMessage(chatId, "✅ *Yaroqsiz foydalanuvchilar topilmadi!*", { parse_mode: "Markdown" });
+            }
+            usersListPage = 0;
+            userManagePage = 0;
+            await sendMainMenu(chatId, true, userId);
+            return;
+        }
         else if (text && (text === "💬 Muloqotlar" || text.includes("💬 Muloqotlar"))) { await showAllConversations(chatId, 0); return; }
         else if (text === "❌ Asosiy menyu") { clearUserSession(userId); userManagePage = 0; usersListPage = 0; await sendMainMenu(chatId, true, userId); }
         else if (!session.step) { await bot.sendMessage(chatId, "❌ Tushunarsiz buyruq!", { parse_mode: "Markdown" }); await sendMainMenu(chatId, true, userId); }
@@ -1412,6 +1494,11 @@ loadData();
 loadVideos();
 loadConversations();
 loadAdminSettings();
+
+// Yaroqsiz foydalanuvchilarni avtomatik tozalash
+console.log("🧹 Yaroqsiz foydalanuvchilar tekshirilmoqda...");
+cleanAllInvalidUsers();
+
 console.log("=".repeat(50));
 console.log(`🚗 ISUZU DOCTOR BOT ISHLADI! Versiya: V${currentVersion}`);
 console.log(`👑 Adminlar: ${ADMIN_IDS.join(", ")}`);
