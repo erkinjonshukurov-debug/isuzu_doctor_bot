@@ -447,7 +447,6 @@ async function deleteCarWithDiagnostics(chatId, userId, carNumber, adminId) {
     
     const car = user.cars[carIndex];
     
-    // Avtomobilga tegishli barcha diagnostikalarni topish
     const carDiagnostics = diagnostics.filter(d => d.carNumber === carNumber && d.phoneNumber === user.phone);
     let totalDeletedAmount = 0;
     let deletedCount = 0;
@@ -1050,7 +1049,7 @@ async function showUsersList(chatId, page, messageId = null) {
     }
 }
 
-// ========== FOYDALANUVCHILARNI BOSHQARISH (TAKOMILLASHTIRILGAN) ==========
+// ========== FOYDALANUVCHILARNI BOSHQARISH (TAKOMILLASHTIRILGAN - AVTOMOBIL RAQAMI KO'RINADI) ==========
 let userManagePage = 0;
 const USERS_MANAGE_PER_PAGE = 10;
 
@@ -1102,20 +1101,26 @@ async function showUsersForManage(chatId, page, messageId = null) {
         const status = u.isBlocked ? "🔴" : "🟢";
         const dateStr = formatDateSimple(u.registeredDate);
         
-        let carsStr = "";
+        // Asosiy avtomobil raqamini olish (birinchi avtomobil)
+        let mainCarNumber = "";
+        let allCarsStr = "";
         for (let j = 0; j < u.cars.length; j++) {
-            carsStr += `${j+1}.${u.cars[j].carNumber} `;
+            if (j === 0) mainCarNumber = u.cars[j].carNumber;
+            allCarsStr += `${j+1}.${u.cars[j].carNumber} `;
         }
         
-        msg += `${status} *${num}. ${(u.fullName || "Ismsiz").substring(0, 20)}*\n`;
+        // Foydalanuvchi ismi o'rniga avtomobil raqami ko'rinadi
+        msg += `${status} *${num}. ${mainCarNumber}*\n`;
+        msg += `👤 ${u.fullName}\n`;
         msg += `📞 ${u.phone}\n`;
-        msg += `🚗 ${carsStr || "❌"}\n`;
+        msg += `🚗 ${allCarsStr}\n`;
         msg += `📊 ${u.totalDiagnostics} ta diagnostika\n`;
         msg += `📅 Qo'shilgan: ${dateStr}\n`;
         msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
         
+        // Tugmada ham avtomobil raqami birinchi ko'rinadi
         keyboard.push([{ 
-            text: `${status} ${num}. ${(u.fullName || "Ismsiz").substring(0, 15)} (${u.cars.length} 🚗)`, 
+            text: `${status} ${mainCarNumber} (${u.fullName.substring(0, 12)})`, 
             callback_data: `manage_user_cars_${u.userId}` 
         }]);
     }
