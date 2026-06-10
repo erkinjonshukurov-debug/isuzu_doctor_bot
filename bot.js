@@ -3,13 +3,12 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
-const archiver = require('archiver');
 
 // ======================== AVTORLIK HUQUQI VA LITSENZIYA ========================
 const LICENSE_KEY = "ISUZU_DOCTOR_BOT_V2";
 const BOT_OWNER = "Erkinjon Shukurov";
 const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
-let currentVersion = "3.4";
+let currentVersion = "3.3";
 
 // ======================== LINKLAR ========================
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
@@ -420,103 +419,69 @@ function getAllDiagnostics(limit=500) { return diagnostics.slice(-limit).reverse
 function getErrors() { return errors.slice(-50).reverse(); }
 function getNearBonusCars() { const near=[]; for(const u of users) { if(u.isAdmin) continue; for(const c of u.cars) { if(c.bonusCount>=3 && c.bonusCount<5) near.push({ fullName:u.fullName, phone:u.phone, carNumber:c.carNumber, bonusCount:c.bonusCount, remaining:5-c.bonusCount }); } } return near; }
 
-// ========== YAROQSIZ FOYDALANUVCHILARNI O'CHIRISH ==========
+// ========== YAROQSIZ FOYDALANUVCHILARNI O'CHIRISH FUNKSIYASI ==========
 function deleteInvalidUsers() {
     let deletedCount = 0;
     const beforeCount = users.length;
     
     const validUsers = users.filter(u => {
+        // Adminlarni o'chirmaymiz
         if (u.isAdmin === true) return true;
+        
+        // Telefon raqami mavjudligini tekshirish
         const hasValidPhone = u.phone && u.phone !== "Telefon yo'q" && u.phone !== "" && u.phone !== null && u.phone !== "null";
         const hasCars = u.cars && u.cars.length > 0;
+        const hasValidName = u.fullName && u.fullName !== "Ismsiz" && u.fullName !== "";
+        
+        // Agar telefon raqami yo'q va avtomobili ham yo'q bo'lsa - o'chiramiz
         if (!hasValidPhone && !hasCars) {
-            console.log(`🗑️ O'chirilmoqda: User ID: ${u.userId}`);
+            console.log(`🗑️ O'chirilmoqda: User ID: ${u.userId}, Telefon: ${u.phone}, Ism: ${u.fullName}`);
             deletedCount++;
             return false;
         }
+        
         return true;
     });
     
     users = validUsers;
-    if (deletedCount > 0) saveUsers();
+    
+    if (deletedCount > 0) {
+        saveUsers();
+        console.log(`✅ ${deletedCount} ta yaroqsiz foydalanuvchi o'chirildi! (${beforeCount} -> ${users.length})`);
+    }
+    
     return deletedCount;
 }
 
 function cleanAllInvalidUsers() {
-    console.log("🧹 Yaroqsiz foydalanuvchilarni tozalash...");
-    return deleteInvalidUsers();
-}
-
-// ========== BACKUP FUNKSIYASI (FAYL YUKLAB OLISH BILAN) ==========
-function createBackup() {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
-    const backupFiles = [];
+    console.log("🧹 Yaroqsiz foydalanuvchilarni tozalash boshlandi...");
+    let deleted = deleteInvalidUsers();
     
-    if(fs.existsSync(USERS_FILE)) {
-        const usersBackup = path.join(BACKUP_DIR, `users_backup_${timestamp}.json`);
-        fs.copyFileSync(USERS_FILE, usersBackup);
-        backupFiles.push(usersBackup);
-    }
-    
-    if(fs.existsSync(DIAGNOSTICS_FILE)) {
-        const diagBackup = path.join(BACKUP_DIR, `diagnostics_backup_${timestamp}.json`);
-        fs.copyFileSync(DIAGNOSTICS_FILE, diagBackup);
-        backupFiles.push(diagBackup);
-    }
-    
-    if(fs.existsSync(CONVERSATIONS_FILE)) {
-        const convBackup = path.join(BACKUP_DIR, `conversations_backup_${timestamp}.json`);
-        fs.copyFileSync(CONVERSATIONS_FILE, convBackup);
-        backupFiles.push(convBackup);
-    }
-    
-    if(fs.existsSync(VIDEOS_FILE)) {
-        const videosBackup = path.join(BACKUP_DIR, `videos_backup_${timestamp}.json`);
-        fs.copyFileSync(VIDEOS_FILE, videosBackup);
-        backupFiles.push(videosBackup);
-    }
-    
-    console.log(`✅ Backup yaratildi: ${timestamp}`);
-    return { timestamp, backupFiles };
-}
-
-function listBackups() {
-    if (!fs.existsSync(BACKUP_DIR)) return [];
-    return fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json') && f.startsWith('users_backup_'));
-}
-
-function restoreBackup(backupName) {
-    const backupPath = path.join(BACKUP_DIR, backupName);
-    if (!fs.existsSync(backupPath)) return false;
-    try {
-        const data = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
-        fs.writeFileSync(USERS_FILE, JSON.stringify(data, null, 2));
+    // Qo'shimcha tekshiruv
+    let additionalDeleted = 0;
+    for (let i = users.length - 1; i >= 0; i--) {
+        const u = users[i];
+        if (u.isAdmin) continue;
         
-        const diagName = backupName.replace('users_backup_', 'diagnostics_backup_');
-        const diagPath = path.join(BACKUP_DIR, diagName);
-        if (fs.existsSync(diagPath)) {
-            const diagData = JSON.parse(fs.readFileSync(diagPath, 'utf8'));
-            fs.writeFileSync(DIAGNOSTICS_FILE, JSON.stringify(diagData, null, 2));
+        const hasValidPhone = u.phone && u.phone !== "Telefon yo'q" && u.phone !== "" && u.phone !== null;
+        const hasCars = u.cars && u.cars.length > 0;
+        
+        if (!hasValidPhone && !hasCars) {
+            users.splice(i, 1);
+            additionalDeleted++;
         }
-        
-        const convName = backupName.replace('users_backup_', 'conversations_backup_');
-        const convPath = path.join(BACKUP_DIR, convName);
-        if (fs.existsSync(convPath)) {
-            const convData = JSON.parse(fs.readFileSync(convPath, 'utf8'));
-            fs.writeFileSync(CONVERSATIONS_FILE, JSON.stringify(convData, null, 2));
-            conversations = convData;
-        }
-        
-        loadData();
-        loadConversations();
-        return true;
-    } catch(e) {
-        console.error(e);
-        return false;
     }
+    
+    if (additionalDeleted > 0) {
+        saveUsers();
+        console.log(`✅ Qo'shimcha ${additionalDeleted} ta yaroqsiz foydalanuvchi o'chirildi!`);
+    }
+    
+    console.log(`✅ Tozalash tugadi. Hozirgi foydalanuvchilar soni: ${users.length}`);
+    return deleted + additionalDeleted;
 }
 
-// ========== FOYDALANUVCHILAR RO'YXATI ==========
+// ========== FOYDALANUVCHILAR RO'YXATI (TARTIBLANGAN) ==========
 function getAllUsersWithDetails() {
     const regularUsers = users.filter(u => u.isAdmin !== true);
     const usersList = [];
@@ -546,6 +511,7 @@ function getAllUsersWithDetails() {
         });
     }
     
+    // REGISTRATSIYA SANASI BO'YICHA TARTIBLASH (YANGI -> ESKI)
     usersList.sort((a, b) => {
         const dateA = new Date(a.registeredDate);
         const dateB = new Date(b.registeredDate);
@@ -893,6 +859,15 @@ function clearUserSession(id) { userSessions.delete(id); }
 // -------------------- BOTNI YARATISH --------------------
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 bot.deleteWebHook().catch(e => console.log(e.message));
+
+// -------------------- BACKUP --------------------
+function createBackup() {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
+    if(fs.existsSync(USERS_FILE)) fs.copyFileSync(USERS_FILE, path.join(BACKUP_DIR, `users_backup_${timestamp}.json`));
+    if(fs.existsSync(DIAGNOSTICS_FILE)) fs.copyFileSync(DIAGNOSTICS_FILE, path.join(BACKUP_DIR, `diagnostics_backup_${timestamp}.json`));
+    if(fs.existsSync(CONVERSATIONS_FILE)) fs.copyFileSync(CONVERSATIONS_FILE, path.join(BACKUP_DIR, `conversations_backup_${timestamp}.json`));
+    console.log("✅ Backup yaratildi");
+}
 
 // -------------------- /start --------------------
 bot.onText(/\/start/, async (msg) => {
@@ -1382,49 +1357,8 @@ bot.on("message", async (msg) => {
         else if (text === "📹 Video galereya") { await showVideoGallery(chatId); await sendMainMenu(chatId, true, userId); }
         else if (text === "📤 Video yuklash") { const s = getUserSession(userId); s.step = "admin_waiting_video"; s.data = {}; await bot.sendMessage(chatId, "📤 Video fayl yuboring", { parse_mode: "Markdown" }); }
         else if (text === "🗑️ Video o'chirish") { await showVideoManagement(chatId); }
-        else if (text === "💾 Backup") {
-            if (!isAdmin(userId)) return;
-            await bot.sendMessage(chatId, "💾 *Backup yaratilmoqda...*", { parse_mode: "Markdown" });
-            
-            const { timestamp, backupFiles } = createBackup();
-            
-            if (backupFiles.length === 0) {
-                await bot.sendMessage(chatId, "❌ *Backup yaratishda xatolik!*", { parse_mode: "Markdown" });
-                await sendMainMenu(chatId, true, userId);
-                return;
-            }
-            
-            let infoMsg = `✅ *Backup yaratildi!*\n\n`;
-            infoMsg += `📅 Sana: ${formatTashkentDateTime(new Date())}\n`;
-            infoMsg += `🆔 ID: ${timestamp}\n`;
-            infoMsg += `📁 Fayllar: ${backupFiles.length} ta\n\n`;
-            infoMsg += `📄 Yuklab olish uchun tugmani bosing:`;
-            
-            const keyboard = {
-                inline_keyboard: [
-                    [{ text: "📥 Barcha backup fayllarni yuklab olish (ZIP)", callback_data: `download_all_backups_${timestamp}` }],
-                    [{ text: "📄 Users backup", callback_data: `download_backup_users_${timestamp}` }],
-                    [{ text: "🔧 Diagnostika backup", callback_data: `download_backup_diagnostics_${timestamp}` }],
-                    [{ text: "💬 Muloqotlar backup", callback_data: `download_backup_conversations_${timestamp}` }],
-                    [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
-                ]
-            };
-            
-            await bot.sendMessage(chatId, infoMsg, { parse_mode: "Markdown", reply_markup: keyboard });
-            return;
-        }
-        else if (text === "🔄 Tiklash") {
-            const backups = listBackups();
-            if (backups.length === 0) {
-                await bot.sendMessage(chatId, "❌ *Backup topilmadi!*", { parse_mode: "Markdown" });
-                await sendMainMenu(chatId, true, userId);
-            } else {
-                let msg = "🔄 *DATABASE TIKLASH*\n\nBackup tanlang:\n\n";
-                const keyboard = backups.slice(0, 10).map(b => [{ text: "📁 " + b.substring(0, 30), callback_data: "restore_" + b }]);
-                keyboard.push([{ text: "❌ Bekor qilish", callback_data: "restore_cancel" }]);
-                await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
-            }
-        }
+        else if (text === "💾 Backup") { createBackup(); await bot.sendMessage(chatId, "✅ Backup yaratildi", { parse_mode: "Markdown" }); await sendMainMenu(chatId, true, userId); }
+        else if (text === "🔄 Tiklash") { await bot.sendMessage(chatId, "❌ Backup yo'q", { parse_mode: "Markdown" }); await sendMainMenu(chatId, true, userId); }
         else if (text === "🚫 Foyd. boshqarish") { userManagePage = 0; await showUsersForManage(chatId, userManagePage); }
         else if (text === "🔐 Xavfsizlik") { await bot.sendMessage(chatId, "🔐 Xavfsizlik paneli", { reply_markup: { inline_keyboard: [[{ text: "🔙 Ortga", callback_data: "security_back" }]] } }); }
         else if (text === "📌 Versiya") { await bot.sendMessage(chatId, `📌 Versiya: V${currentVersion}`, { parse_mode: "Markdown" }); await sendMainMenu(chatId, true, userId); }
@@ -1530,122 +1464,6 @@ bot.on("callback_query", async (query) => {
         return;
     }
     
-    // BACKUP YUKLAB OLISH
-    if (data.startsWith("download_all_backups_")) {
-        if (!isAdmin(userId)) return;
-        const timestamp = data.replace("download_all_backups_", "");
-        
-        await bot.sendMessage(chatId, "📦 *Backup fayllar tayyorlanmoqda...*", { parse_mode: "Markdown" });
-        
-        try {
-            const zipPath = path.join(BACKUP_DIR, `backup_all_${timestamp}.zip`);
-            const output = fs.createWriteStream(zipPath);
-            const archive = archiver('zip', { zlib: { level: 9 } });
-            
-            output.on('close', async () => {
-                await bot.sendDocument(chatId, zipPath, { 
-                    caption: `📦 *BACKUP ARXIVI*\n📅 ${formatTashkentDateTime(new Date())}\n📌 Versiya: V${currentVersion}\n\n📁 ${archive.pointer()} bayt`,
-                    parse_mode: "Markdown"
-                });
-                setTimeout(() => fs.unlinkSync(zipPath), 60000);
-            });
-            
-            archive.on('error', (err) => {
-                console.error(err);
-                bot.sendMessage(chatId, "❌ *ZIP yaratishda xatolik!*", { parse_mode: "Markdown" });
-            });
-            
-            archive.pipe(output);
-            
-            const files = [
-                { name: `users_backup_${timestamp}.json`, path: path.join(BACKUP_DIR, `users_backup_${timestamp}.json`) },
-                { name: `diagnostics_backup_${timestamp}.json`, path: path.join(BACKUP_DIR, `diagnostics_backup_${timestamp}.json`) },
-                { name: `conversations_backup_${timestamp}.json`, path: path.join(BACKUP_DIR, `conversations_backup_${timestamp}.json`) },
-                { name: `videos_backup_${timestamp}.json`, path: path.join(BACKUP_DIR, `videos_backup_${timestamp}.json`) }
-            ];
-            
-            for (const file of files) {
-                if (fs.existsSync(file.path)) {
-                    archive.file(file.path, { name: file.name });
-                }
-            }
-            
-            await archive.finalize();
-        } catch(e) {
-            console.error(e);
-            await bot.sendMessage(chatId, "❌ *Xatolik yuz berdi!*", { parse_mode: "Markdown" });
-        }
-        return;
-    }
-    
-    if (data.startsWith("download_backup_users_")) {
-        if (!isAdmin(userId)) return;
-        const timestamp = data.replace("download_backup_users_", "");
-        const filepath = path.join(BACKUP_DIR, `users_backup_${timestamp}.json`);
-        
-        if (fs.existsSync(filepath)) {
-            await bot.sendDocument(chatId, filepath, { 
-                caption: `📄 *USERS BACKUP*\n📅 ${formatTashkentDateTime(new Date())}\n📌 Versiya: V${currentVersion}`,
-                parse_mode: "Markdown"
-            });
-        } else {
-            await bot.sendMessage(chatId, "❌ *Backup fayl topilmadi!*", { parse_mode: "Markdown" });
-        }
-        return;
-    }
-    
-    if (data.startsWith("download_backup_diagnostics_")) {
-        if (!isAdmin(userId)) return;
-        const timestamp = data.replace("download_backup_diagnostics_", "");
-        const filepath = path.join(BACKUP_DIR, `diagnostics_backup_${timestamp}.json`);
-        
-        if (fs.existsSync(filepath)) {
-            await bot.sendDocument(chatId, filepath, { 
-                caption: `🔧 *DIAGNOSTIKA BACKUP*\n📅 ${formatTashkentDateTime(new Date())}\n📌 Versiya: V${currentVersion}`,
-                parse_mode: "Markdown"
-            });
-        } else {
-            await bot.sendMessage(chatId, "❌ *Backup fayl topilmadi!*", { parse_mode: "Markdown" });
-        }
-        return;
-    }
-    
-    if (data.startsWith("download_backup_conversations_")) {
-        if (!isAdmin(userId)) return;
-        const timestamp = data.replace("download_backup_conversations_", "");
-        const filepath = path.join(BACKUP_DIR, `conversations_backup_${timestamp}.json`);
-        
-        if (fs.existsSync(filepath)) {
-            await bot.sendDocument(chatId, filepath, { 
-                caption: `💬 *MUHOQOTLAR BACKUP*\n📅 ${formatTashkentDateTime(new Date())}\n📌 Versiya: V${currentVersion}`,
-                parse_mode: "Markdown"
-            });
-        } else {
-            await bot.sendMessage(chatId, "❌ *Backup fayl topilmadi!*", { parse_mode: "Markdown" });
-        }
-        return;
-    }
-    
-    if (data.startsWith("restore_")) {
-        if (!isAdmin(userId)) return;
-        const backupName = data.replace("restore_", "");
-        await bot.sendMessage(chatId, "🔄 *Database tiklanmoqda...*", { parse_mode: "Markdown" });
-        if (restoreBackup(backupName)) {
-            await bot.sendMessage(chatId, "✅ *Database tiklandi!*", { parse_mode: "Markdown" });
-        } else {
-            await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
-        }
-        await sendMainMenu(chatId, true, userId);
-        return;
-    }
-    
-    if (data === "restore_cancel") {
-        if (!isAdmin(userId)) return;
-        await bot.sendMessage(chatId, "❌ *Bekor qilindi.*", { parse_mode: "Markdown" });
-        await sendMainMenu(chatId, true, userId);
-        return;
-    }
-    
     if (data.startsWith("open_conversation_")) { if (!isAdmin(userId)) return; const targetId = parseInt(data.split("_")[2]); const s = getUserSession(userId); s.step = "conversation_mode"; s.data.inConversation = true; s.data.replyingToUserId = targetId; await showConversation(chatId, userId, true, targetId); return; }
     if (data.startsWith("conversations_page_")) { if (!isAdmin(userId)) return; const page = parseInt(data.split("_")[2]); await showAllConversations(chatId, page); return; }
     if (data.startsWith("delete_conv_")) { if (!isAdmin(userId)) return; const convId = parseInt(data.split("_")[2]); const res = deleteConversation(convId, userId); await bot.answerCallbackQuery(query.id, { text: res.message, show_alert: true }); await showAllConversations(chatId, 0); return; }
@@ -1677,6 +1495,7 @@ loadVideos();
 loadConversations();
 loadAdminSettings();
 
+// Yaroqsiz foydalanuvchilarni avtomatik tozalash
 console.log("🧹 Yaroqsiz foydalanuvchilar tekshirilmoqda...");
 cleanAllInvalidUsers();
 
