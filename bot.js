@@ -8,7 +8,7 @@ const os = require('os');
 const LICENSE_KEY = "ISUZU_DOCTOR_BOT_V2";
 const BOT_OWNER = "Erkinjon Shukurov";
 const BOT_OWNER_TELEGRAM = "@Erkinjon_Shukurov";
-let currentVersion = "2.5";
+let currentVersion = "2.6";
 
 // ======================== LINKLAR ========================
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
@@ -150,7 +150,6 @@ function deleteConversation(conversationId, adminId) {
     saveConversations();
     
     addSecurityLog("CONVERSATION_DELETED", adminId, `Muloqot o'chirildi: ${userName} (userID: ${conversation.userId})`);
-    console.log(`🗑️ Admin ${adminId} tomonidan ${userName} bilan muloqot o'chirildi`);
     
     return { success: true, message: `✅ "${userName}" bilan muloqot o'chirildi!` };
 }
@@ -168,6 +167,31 @@ function getLocationButtons(lat, lng) {
     };
 }
 
+// Xarita linkidan koordinata olish
+function parseMapUrl(text) {
+    // Google Maps: https://www.google.com/maps?q=40.7128,-74.0060
+    let match = text.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (match) {
+        return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+    }
+    // Google Maps: https://maps.google.com/?ll=40.7128,-74.0060
+    match = text.match(/[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (match) {
+        return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+    }
+    // Yandex Maps: https://yandex.uz/maps/?ll=69.2401,41.2995
+    match = text.match(/[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (match) {
+        return { lat: parseFloat(match[2]), lng: parseFloat(match[1]) };
+    }
+    // Koordinata formati: 40.7128, -74.0060
+    match = text.match(/(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+    if (match) {
+        return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+    }
+    return null;
+}
+
 async function showConversation(chatId, userId, isAdminView = false, targetUserId = null) {
     let conversation, otherUserName;
     if (isAdminView && targetUserId) {
@@ -181,7 +205,10 @@ async function showConversation(chatId, userId, isAdminView = false, targetUserI
     
     if (!conversation || conversation.messages.length === 0) {
         const msg = isAdminView ? "💬 *Hali xabar yo'q*\n\nFoydalanuvchiga xabar yozishingiz mumkin." : CONTACT_ADMIN_MESSAGE;
-        const keyboard = isAdminView ? null : { reply_markup: { keyboard: [[{text:"📍 Lokatsiya yuborish", request_location:true}],[{text:"🔙 Bekor qilish"}]], resize_keyboard:true } };
+        let keyboard = null;
+        if (!isAdminView) {
+            keyboard = { reply_markup: { keyboard: [[{text:"📍 Lokatsiya yuborish", request_location:true}],[{text:"🔙 Bekor qilish"}]], resize_keyboard:true } };
+        }
         await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", ...keyboard });
         return;
     }
@@ -209,11 +236,17 @@ async function showConversation(chatId, userId, isAdminView = false, targetUserI
     }
     
     if (isAdminView) {
-        msg += "\n✏️ *Javob yozing*\n📍 Lokatsiya yuborish mumkin\n🗑️ Muloqotni o'chirish - tugmasini bosing\n🔙 Muloqotlar ro'yxati";
+        msg += "\n✏️ *Javob yozing*\n📍 *Lokatsiya yuborish:*\n";
+        msg += "   • 📍 Joriy lokatsiyam - telefonning joriy joyi\n";
+        msg += "   • 🗺️ Xaritadan tanlash - link yoki koordinata\n";
+        msg += "━━━━━━━━━━━━━━━━━━\n";
+        msg += "🗑️ Bu muloqotni o'chirish\n🔙 Muloqotlar ro'yxati";
+        
         const keyboard = { 
             reply_markup: { 
                 keyboard: [
-                    [{ text: "📍 Lokatsiya yuborish", request_location: true }],
+                    [{ text: "📍 Joriy lokatsiyam", request_location: true }],
+                    [{ text: "🗺️ Xaritadan lokatsiya tanlash" }],
                     [{ text: "🗑️ Bu muloqotni o'chirish" }],
                     [{ text: "🔙 Muloqotlar ro'yxati" }]
                 ], 
@@ -530,7 +563,7 @@ bot.on("message", async (msg) => {
     if(photo) { await bot.sendMessage(chatId, "❌ Rasm qabul qilinmaydi!", { parse_mode:"Markdown" }); return; }
     if(document) { await bot.sendMessage(chatId, "❌ Hujjat qabul qilinmaydi!", { parse_mode:"Markdown" }); return; }
     
-    // LOKATSIYA
+    // LOKATSIYA - JORIY LOKATSIYA
     if(location) {
         if(session.step === "conversation_mode" || session.data.inConversation) {
             if(isAdmin(userId)) {
@@ -589,6 +622,45 @@ bot.on("message", async (msg) => {
                 return;
             }
         }
+    }
+    
+    // ADMIN XARITADAN LOKATSIYA TANLASH
+    if(isAdmin(userId) && text === "🗺️ Xaritadan lokatsiya tanlash") {
+        if(session.step === "conversation_mode") {
+            await bot.sendMessage(chatId, "🗺️ *Xaritadan lokatsiya tanlash*\n\nGoogle Maps dan lokatsiya linkini yuboring:\n\nMasalan:\nhttps://www.google.com/maps?q=40.7128,-74.0060\n\nYoki koordinata kiriting: 40.7128, -74.0060", { parse_mode: "Markdown" });
+            session.step = "admin_waiting_map_location";
+            return;
+        }
+    }
+    
+    // XARITA LINKI YOKI KOORDINATANI QAYTA ISHLASH
+    if(session.step === "admin_waiting_map_location") {
+        if(!isAdmin(userId)) return;
+        if(text === "/cancel") {
+            clearUserSession(userId);
+            await showConversation(chatId, userId, true, session.data.replyingToUserId);
+            return;
+        }
+        
+        const location = parseMapUrl(text);
+        
+        if (!location) {
+            await bot.sendMessage(chatId, "❌ *Noto'g'ri format!*\n\nIltimos, Google Maps linki yoki koordinata kiriting:\n• https://www.google.com/maps?q=40.7128,-74.0060\n• 40.7128, -74.0060", { parse_mode: "Markdown" });
+            return;
+        }
+        
+        const targetId = session.data.replyingToUserId;
+        if (targetId) {
+            addAdminReply(userId, targetId, "", "location", { latitude: location.lat, longitude: location.lng });
+            await bot.sendMessage(chatId, `✅ *Lokatsiya yuborildi!*\n📍 ${location.lat}, ${location.lng}`, { parse_mode: "Markdown" });
+            
+            const locationMsg = `📍 *Admin lokatsiya yubordi*\n\n🗺️ [Google Maps](https://www.google.com/maps?q=${location.lat},${location.lng})\n🗺️ [Yandex Maps](https://yandex.uz/maps/?ll=${location.lng},${location.lat}&z=15)\n🗺️ [2GIS](https://2gis.uz/search/${location.lat},${location.lng})\n🗺️ [OpenStreetMap](https://www.openstreetmap.org/?mlat=${location.lat}&mlon=${location.lng}&zoom=15)`;
+            await bot.sendMessage(targetId, locationMsg, { parse_mode: "Markdown", disable_web_page_preview: true });
+            
+            await showConversation(chatId, userId, true, targetId);
+            clearUserSession(userId);
+        }
+        return;
     }
     
     // ADMIN VIDEO YUKLASH
@@ -657,7 +729,7 @@ bot.on("message", async (msg) => {
     if(session.step === "conversation_mode" || session.data.inConversation) {
         if(isAdmin(userId)) {
             const targetId = session.data.replyingToUserId;
-            if(targetId && text && !text.startsWith("/") && text !== "🗑️ Bu muloqotni o'chirish" && text !== "🔙 Muloqotlar ro'yxati") {
+            if(targetId && text && !text.startsWith("/") && text !== "🗑️ Bu muloqotni o'chirish" && text !== "🔙 Muloqotlar ro'yxati" && text !== "🗺️ Xaritadan lokatsiya tanlash") {
                 addAdminReply(userId, targetId, text, "text", null);
                 await bot.sendMessage(chatId, "✅ Javob yuborildi!", { parse_mode:"Markdown" });
                 await bot.sendMessage(targetId, `👑 *Admin javobi:*\n\n${text}`, { parse_mode:"Markdown" });
@@ -778,7 +850,7 @@ bot.on("message", async (msg) => {
         else if(text === "🔄 Tiklash") { await bot.sendMessage(chatId, "❌ Backup yo'q", { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
         else if(text === "🚫 Foyd. boshqarish") { const all=[...getActiveUsers(),...getBlockedUsers()].filter(u=>u.cars.length>0); if(all.length===0) await bot.sendMessage(chatId, "📭 Foydalanuvchi yo'q"); else { let msg="👥 FOYDALANUVCHILAR\n━━━━━━━━━━━━━━━━━━\n"; const keyboard=[]; for(let i=0;i<Math.min(10,all.length);i++) { const u=all[i]; const st=u.isBlocked?"🔴":"🟢"; msg+=`${st} ${i+1}. ${u.cars[0].carNumber}\n`; keyboard.push([{ text:`${st} ${i+1}. ${u.cars[0].carNumber}`, callback_data:`manage_user_${u.userId}` }]); } keyboard.push([{ text:"🔙 Ortga", callback_data:"admin_manage_users_back" }]); await bot.sendMessage(chatId, msg, { parse_mode:"Markdown", reply_markup:{ inline_keyboard:keyboard } }); } }
         else if(text === "🔐 Xavfsizlik") { await bot.sendMessage(chatId, "🔐 Xavfsizlik paneli", { reply_markup:{ inline_keyboard:[[{text:"🔙 Ortga", callback_data:"security_back"}]] } }); }
-        else if(text === "📌 Versiya") { await bot.sendMessage(chatId, `📌 Versiya: V${currentVersion}`, { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
+        else if(text === "📌 Versija") { await bot.sendMessage(chatId, `📌 Versiya: V${currentVersion}`, { parse_mode:"Markdown" }); await sendMainMenu(chatId,true,userId); }
         else if(text === "📢 Xabar yuborish") { const s=getUserSession(userId); s.step="admin_send_message"; await bot.sendMessage(chatId, "📢 Xabarni kiriting:", { parse_mode:"Markdown", ...removeKeyboard() }); }
         else if(text && (text === "💬 Muloqotlar" || text.includes("💬 Muloqotlar"))) {
             await showAllConversations(chatId, 0);
@@ -803,7 +875,6 @@ bot.on("callback_query", async (query) => {
         const s=getUserSession(userId); 
         s.step="conversation_mode"; 
         s.data.inConversation=true; 
-        // Avtomatik xabar yuborish
         await bot.sendMessage(chatId, CONTACT_ADMIN_MESSAGE, { parse_mode:"Markdown", ...getLocationKeyboard() });
         return; 
     }
